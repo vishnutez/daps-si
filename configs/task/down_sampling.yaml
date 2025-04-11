@@ -7,11 +7,15 @@ pixel:
     lr_min_ratio: 0.01
     mc_algo: langevin
     prior_solver: gaussian
+    rho: 0.0005  # Face loss weight
+    num_steps_fs: 10  # Face similarity steps
+    norm_order_fs: 2  # Face loss norm order
+    use_face_similarity: False
   
   operator:
     name: down_sampling
     resolution: 256
-    scale_factor: 4
+    scale_factor: 8
     sigma: 0.05
 
 # latent diffusion model

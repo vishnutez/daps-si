@@ -79,7 +79,7 @@ class ImageDataset(DiffusionData):
         self.device = device
 
     def __getitem__(self, i):
-        img = (self.trans(Image.open(self.data[i])) * 2 - 1).to(self.device)
+        img = (self.trans(Image.open(self.data[i]).convert('RGB')) * 2 - 1).to(self.device)
         if img.shape[0] == 1:
             img = torch.cat([img] * 3, dim=0)
         return img

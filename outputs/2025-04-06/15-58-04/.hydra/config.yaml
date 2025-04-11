@@ -1,0 +1,120 @@
+gpu: 0
+batch_size: 1
+num_runs: 1
+save_dir: results
+name: demo
+wandb: false
+save_samples: true
+save_traj: false
+save_traj_raw_data: false
+show_eval: false
+eval_fn_list:
+- psnr
+- lpips
+task_group: pixel
+project_name: DAPS
+seed: 8
+data:
+  name: image
+  root: dataset/demo-celeb-ref
+  resolution: 256
+  start_id: 0
+  end_id: 1
+model:
+  name: ddpm
+  model_config:
+    image_size: 256
+    num_channels: 128
+    num_res_blocks: 1
+    channel_mult: ''
+    learn_sigma: true
+    class_cond: false
+    use_checkpoint: false
+    attention_resolutions: 16
+    num_heads: 4
+    num_head_channels: 64
+    num_heads_upsample: -1
+    use_scale_shift_norm: true
+    dropout: 0.0
+    resblock_updown: true
+    use_fp16: false
+    use_new_attention_order: false
+    model_path: checkpoints/ffhq256.pt
+task:
+  pixel:
+    mcmc_sampler_config:
+      num_steps: 100
+      lr: 5.0e-05
+      tau: 0.01
+      lr_min_ratio: 0.01
+      mc_algo: langevin
+      prior_solver: gaussian
+      rho: 0.0005
+      num_steps_fs: 10
+      norm_order_fs: 2
+      use_face_similarity: true
+    operator:
+      name: inpainting
+      mask_type: box_deterministic
+      mask_len_range:
+      - 128
+      - 129
+      resolution: 256
+      sigma: 0.05
+      top: 100
+      left: 100
+      height: 96
+      width: 96
+  ldm:
+    mcmc_sampler_config:
+      num_steps: 15
+      lr: 9.02e-06
+      tau: 0.01
+      lr_min_ratio: 0.13
+      momentum: 0.74
+      mc_algo: hmc
+      prior_solver: gaussian
+    operator:
+      name: inpainting
+      mask_type: box
+      mask_len_range:
+      - 128
+      - 129
+      resolution: 256
+      sigma: 0.05
+  sd:
+    mcmc_sampler_config:
+      num_steps: 20
+      lr: 1.0e-05
+      tau: 0.01
+      lr_min_ratio: 1
+      momentum: 0.6
+      mc_algo: hmc
+      prior_solver: gaussian
+    operator:
+      name: inpainting
+      mask_type: box
+      mask_len_range:
+      - 128
+      - 129
+      resolution: 256
+      sigma: 0.01
+sampler:
+  latent: false
+  annealing_scheduler_config:
+    name: edm
+    num_steps: 200
+    sigma_max: 100
+    sigma_min: 0.1
+    timestep: poly-7
+  diffusion_scheduler_config:
+    name: edm
+    num_steps: 5
+    sigma_min: 0.01
+    timestep: poly-7
+guid_data:
+  name: image
+  root: dataset/demo-celeb-guid
+  resolution: 256
+  start_id: 0
+  end_id: 10

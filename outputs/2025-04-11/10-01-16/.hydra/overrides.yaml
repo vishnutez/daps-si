@@ -1,0 +1,15 @@
+- +model=ffhq256ddpm
+- +sampler=edm_daps
+- task_group=pixel
+- save_dir=results
+- num_runs=1
+- sampler.diffusion_scheduler_config.num_steps=5
+- sampler.annealing_scheduler_config.num_steps=200
+- batch_size=1
+- data.start_id=0
+- data.end_id=1
+- gpu=0
+- +guid_data=demo-celeb-2-img-1
+- +data=demo-celeb-2-img-2
+- seed=8
+- +task=inpainting_box_deterministic

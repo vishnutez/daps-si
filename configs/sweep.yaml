@@ -28,6 +28,7 @@ command:
   - python
   - ${program}
   - +data=demo-ffhq
+  - +guid_data=demo-celeb-guid
   - +model=ffhq256ldm
   - +task=phase_retrieval
   - num_runs=4

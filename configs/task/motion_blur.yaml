@@ -1,12 +1,13 @@
 # pixel space task
 pixel:
   mcmc_sampler_config:  
-    num_steps: 100
+    num_steps: 10
     lr: 5e-5
     tau: 0.01
     lr_min_ratio: 0.01
     mc_algo: langevin
     prior_solver: gaussian
+    use_face_similarity: False
   
   operator:
     name: motion_blur

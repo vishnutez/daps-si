@@ -1,0 +1,63 @@
+# pixel space task
+pixel:
+  mcmc_sampler_config:  
+    num_steps: 100
+    lr: 5e-5
+    tau: 0.01
+    lr_min_ratio: 0.01
+    mc_algo: langevin
+    prior_solver: gaussian
+    rho: 0.0005  # Face loss weight
+    num_steps_fs: 2  # Face similarity steps
+    norm_order_fs: 2  # Face loss norm order
+    # l1_reg: 1000  # L1 regularization weight
+    use_face_similarity: False
+  
+  operator:
+    name: inpainting
+    mask_type: box_deterministic
+    mask_len_range: [128, 129]
+    resolution: 256
+    sigma: 0.05
+    top: 150
+    left: 100
+    height: 64
+    width: 64
+
+
+# latent diffusion model
+ldm: 
+  mcmc_sampler_config: 
+    num_steps: 15
+    lr: 9.02e-6
+    tau: 0.01
+    lr_min_ratio: 0.13
+    momentum: 0.74
+    mc_algo: hmc
+    prior_solver: gaussian
+  
+  operator:
+    name: inpainting
+    mask_type: box
+    mask_len_range: [128, 129]
+    resolution: 256
+    sigma: 0.05
+    
+
+# stable diffusion 
+sd: 
+  mcmc_sampler_config: 
+    num_steps: 20
+    lr: 1e-5
+    tau: 0.01
+    lr_min_ratio: 1
+    momentum: 0.60
+    mc_algo: hmc
+    prior_solver: gaussian
+  
+  operator:
+    name: inpainting
+    mask_type: box
+    mask_len_range: [128, 129]
+    resolution: 256
+    sigma: 0.01
