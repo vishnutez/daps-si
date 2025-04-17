@@ -11,7 +11,7 @@ pixel:
   operator:
     name: down_sampling
     resolution: 256
-    scale_factor: 4
+    scale_factor: 10
     sigma: 0.05
 
 # latent diffusion model

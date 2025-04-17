@@ -1,0 +1,5 @@
+rewards:
+  - name: adaface
+    pretrained_model: 'ir_50'
+    steering: [gradient]
+    data_path: 'dataset/si2/additional_images'

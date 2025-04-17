@@ -1,0 +1,4 @@
+name: FK-steering
+method: instant
+num_particles: 8
+base: 10

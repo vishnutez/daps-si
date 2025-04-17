@@ -1,0 +1,5 @@
+name: image
+root: 'dataset/si2/images'
+resolution: 256
+start_id: 0
+end_id: 1
