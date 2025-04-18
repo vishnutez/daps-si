@@ -1,4 +1,6 @@
 results/
+AdaFace/
+clip/
 
 ### General ###
 .DS_Store
