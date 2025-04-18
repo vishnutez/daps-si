@@ -1,6 +1,7 @@
 results/
 AdaFace/
 clip/
+logs/
 
 ### General ###
 .DS_Store

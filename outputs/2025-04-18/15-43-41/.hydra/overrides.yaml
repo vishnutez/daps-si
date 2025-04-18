@@ -1,0 +1,12 @@
+- +data=demo-ffhq
+- +model=ffhq256ldm
+- +task=motion_blur
+- +sampler=latent_edm_daps
+- task_group=ldm
+- save_dir=results/ldm/ffhq
+- num_runs=1
+- sampler.diffusion_scheduler_config.num_steps=2
+- sampler.annealing_scheduler_config.num_steps=50
+- batch_size=10
+- name=motion_blur
+- gpu=0

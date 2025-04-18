@@ -207,17 +207,8 @@ def main(args):
     operator = get_operator(**task_group.operator)
     y = operator.measure(images)
 
-    # get face guidance data is use_face_similarity is True
-    if task_group.mcmc_sampler_config.use_face_similarity:
-        guid_data = get_dataset(**args.guid_data)
-        guid_images = guid_data.get_data(total_number, 0)
-        print('guid images shape:', guid_images.shape)
-    else:
-        guid_images = None
-        print('no face similarity')
-
     # get sampler
-    sampler = get_sampler(**args.sampler, mcmc_sampler_config=task_group.mcmc_sampler_config, guid_images=guid_images)
+    sampler = get_sampler(**args.sampler, mcmc_sampler_config=task_group.mcmc_sampler_config)
 
     # get model
     model = get_model(**args.model)

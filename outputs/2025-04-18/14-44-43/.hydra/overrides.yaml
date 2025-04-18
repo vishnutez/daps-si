@@ -1,0 +1,14 @@
+- +data=demo-ffhq
+- +model=ffhq256ldm
+- +task=motion_blur
+- +sampler=edm_daps
+- task_group=ldm
+- save_dir=results
+- num_runs=1
+- sampler.diffusion_scheduler_config.num_steps=5
+- sampler.annealing_scheduler_config.num_steps=200
+- batch_size=2
+- data.start_id=0
+- data.end_id=2
+- name=mb_fs_demo
+- gpu=0

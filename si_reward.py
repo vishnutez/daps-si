@@ -305,19 +305,68 @@ class MeasurementReward(Reward):
         pass
 
 
+
 @register_reward_method('style')
 class StyleReward:
-    def __init__(self, pretrained_model, **kwargs):
-        pass
+    def __init__(self, model, data_path: str, device: str = 'cuda:0', scale=1,
+                 freq=1, **kwargs):
+        super().__init__(**kwargs)
 
-    def get_reward(self, images):
-        pass
+        from src.clip.clip.base_clip import CLIPEncoder
 
-    def set_gt_embeddings(self, additional_images):
-        pass
+        self.model = model  # diffusion model for decoding the latents
+        self.clip_encoder = CLIPEncoder().cuda()  # trained-model for style transfer
+        file_types = ['*.jpg', '*.JPG', '*.jpeg', '*.JPEG', '*.png', '*.PNG']
+        self.device = device
+        self.files = sorted([f for ft in file_types for f in Path(data_path).rglob(ft)])
+        self.gt_embeddings = None
+        self.scale = scale
+        self.freq = 1
+        self.name = 'style'
+        self.to_tensor = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
+        ])
+
+    def get_reward(self, latents):  # images (B, C, H, W) in [-1, 1]
+        images = self.model.decode(latents)
+        embd_gram = self._embeddings(images)
+        return -torch.linalg.norm(self.gt_embeddings - embd_gram, axis=(-1, -2))
+
+
+    def set_gt_embeddings(self, index: int):
+        """
+        Sets the ground-truth embedding by loading and embedding the additional image
+        at the given index in the dataset.
+
+        Args:
+            index (int): Index of the reference image in the dataset list.
+        """
+        # Load and preprocess image
+
+        img = Image.open(self.files[index]).convert('RGB')
+        image = img.resize((224, 224), Image.Resampling.BILINEAR)
+        img = self.to_tensor(image)
+        img = torch.unsqueeze(img, 0)
+        img = img.cuda()
+
+        # Set gt embedding
+        self.gt_embeddings = self._embeddings(img).detach()  # gram matrix of the embd
 
     def _embeddings(self, tensor_images):
-        pass
 
+        emb, feats = self.clip_model.encode_image_with_features(tensor_images)
+        feat = feats[2][1:, :, :]  # get the last layer features
+        feat = feat.permute(1, 0, 2)
+        feat_T = feat.permute(0, 2, 1)  # T -> transpose
+        feat_gram_mat = torch.bmm(feat_T, feat)  # multiply the two matrices broadcasting the dimension
 
+        return feat_gram_mat
+    
+    def get_gradients(self, latents: torch.Tensor, **kwargs):
 
+        latents = latents.clone().detach().requires_grad_(True)
+        loss = -self.get_reward(latents)  # distances
+        loss_grad = torch.autograd.grad(loss.sum(), latents)[0]  # returns only the gradients
+
+        return loss_grad.detach()

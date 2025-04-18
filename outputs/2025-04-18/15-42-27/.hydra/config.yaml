@@ -1,0 +1,138 @@
+gpu: 0
+batch_size: 10
+num_runs: 1
+save_dir: results/ldm/ffhq
+name: motion_blur
+wandb: false
+save_samples: true
+save_traj: false
+save_traj_raw_data: false
+show_eval: false
+eval_fn_list:
+- psnr
+- lpips
+- ssim
+- fs_loss_l2
+task_group: ldm
+project_name: DAPS
+seed: 8
+data:
+  name: image
+  root: dataset/test-ffhq
+  resolution: 256
+  start_id: 0
+  end_id: 100
+model:
+  name: ldm
+  ldm_config:
+    model:
+      base_learning_rate: 2.0e-06
+      target: model.ldm.models.diffusion.ddpm.LatentDiffusion
+      params:
+        linear_start: 0.0015
+        linear_end: 0.0195
+        num_timesteps_cond: 1
+        log_every_t: 200
+        timesteps: 1000
+        first_stage_key: image
+        image_size: 64
+        channels: 3
+        monitor: val/loss_simple_ema
+        unet_config:
+          target: model.ldm.modules.diffusionmodules.openaimodel.UNetModel
+          params:
+            image_size: 64
+            in_channels: 3
+            out_channels: 3
+            model_channels: 224
+            attention_resolutions:
+            - 8
+            - 4
+            - 2
+            num_res_blocks: 2
+            channel_mult:
+            - 1
+            - 2
+            - 3
+            - 4
+            num_head_channels: 32
+        first_stage_config:
+          target: model.ldm.models.autoencoder.VQModelInterface
+          params:
+            embed_dim: 3
+            n_embed: 8192
+            ckpt_path: null
+            ddconfig:
+              double_z: false
+              z_channels: 3
+              resolution: 256
+              in_channels: 3
+              out_ch: 3
+              ch: 128
+              ch_mult:
+              - 1
+              - 2
+              - 4
+              num_res_blocks: 2
+              attn_resolutions: []
+              dropout: 0.0
+            lossconfig:
+              target: torch.nn.Identity
+        cond_stage_config: __is_unconditional__
+  diffusion_path: checkpoints/ldm_ffhq256.pt
+task:
+  pixel:
+    mcmc_sampler_config:
+      num_steps: 10
+      lr: 5.0e-05
+      tau: 0.01
+      lr_min_ratio: 0.01
+      mc_algo: langevin
+      prior_solver: gaussian
+      use_face_similarity: false
+    operator:
+      name: motion_blur
+      kernel_size: 61
+      intensity: 0.5
+      sigma: 0.05
+  ldm:
+    mcmc_sampler_config:
+      num_steps: 49
+      lr: 2.4e-05
+      tau: 0.01
+      lr_min_ratio: 0.041
+      momentum: 0.45
+      mc_algo: hmc
+      prior_solver: gaussian
+    operator:
+      name: motion_blur
+      kernel_size: 61
+      intensity: 0.5
+      sigma: 0.05
+  sd:
+    mcmc_sampler_config:
+      num_steps: 30
+      lr: 2.0e-05
+      tau: 0.01
+      lr_min_ratio: 1
+      momentum: 0.85
+      mc_algo: hmc
+      prior_solver: gaussian
+    operator:
+      name: motion_blur
+      kernel_size: 61
+      intensity: 0.5
+      sigma: 0.01
+sampler:
+  latent: true
+  annealing_scheduler_config:
+    name: edm
+    num_steps: 50
+    sigma_max: 10
+    sigma_min: 0.1
+    timestep: poly-7
+  diffusion_scheduler_config:
+    name: edm
+    num_steps: 2
+    sigma_min: 0.001
+    timestep: poly-7
