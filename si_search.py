@@ -106,7 +106,6 @@ class GroupMeetingSearch(Search):
             selected_idxs[i: i + group_size] = np.random.choice(
                 list(range(i, i + group_size)), p=scores[i: i + group_size], size=group_size, replace=True
             )
-
         return selected_idxs.astype(int)
 
 

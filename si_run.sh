@@ -22,15 +22,16 @@ python si_ps.py \
 +model=ffhq256ddpm \
 +task=down_sampling \
 +sampler=edm_daps \
-+reward=face \
++reward=daps \
 +search=group \
 task_group=pixel \
 save_dir=results \
 num_runs=1 \
 sampler.diffusion_scheduler_config.num_steps=5 \
 sampler.annealing_scheduler_config.num_steps=200 \
-data.start_id=0 data.end_id=1 \
-name=SR10_without_search8_img1 \
+data.start_id=1 data.end_id=2 \
+name=SR10_daps_noiseless \
 gpu=0
 
+# SR10_search4_measurement_MinReward
 #name=DS10_group32_min4_img1

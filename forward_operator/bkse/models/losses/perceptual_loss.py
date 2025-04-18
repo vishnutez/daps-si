@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torchvision.models as models
+from torchvision.models import VGG19_Weights
 
 
 class StyleLoss(nn.Module):
@@ -67,7 +68,8 @@ class PerceptualLoss(nn.Module):
 class VGG19(torch.nn.Module):
     def __init__(self):
         super(VGG19, self).__init__()
-        features = models.vgg19(pretrained=True).features
+        #features = models.vgg19(pretrained=True).features
+        features = models.vgg19(weights=VGG19_Weights.DEFAULT).features
         self.relu1_1 = torch.nn.Sequential()
         self.relu1_2 = torch.nn.Sequential()
 

@@ -73,9 +73,10 @@ class DAPS(nn.Module):
             # Find the rewards and do the search
             rewards = torch.zeros(x0hat.shape[0], device=x0hat.device)
             for reward in search_rewards:
-                rew = reward.get_reward(x0hat)
+                rew = reward.get_reward(x0hat, measurements=measurement)
                 if step > 198:
-                    print(rewards.cpu().detach().numpy())
+                    print('reward is: ', rew.cpu().detach().numpy())
+                    print('reward mean: ', np.mean(rew.cpu().detach().numpy()))
                 rewards += rew
 
             if search_rewards:  # if search rewards is empty we shouldn't do any search
@@ -83,20 +84,10 @@ class DAPS(nn.Module):
                 xt = xt[resampled_idx].clone()
                 x0hat = x0hat[resampled_idx].clone()
 
-            # TODO: delete this part because it's only for test
-            # ******************************************************
-            if gradient_rewards:
-                for rew in gradient_rewards:
-                    print('taking gradient through reward function', flush=True)
-                    a = rew.get_gradients(x0hat)
-                    print(type(a), flush=True)
-                    print(a.shape, flush=True)
-
-            # ******************************************************
-
             # 2. MCMC update
             x0y = self.mcmc_sampler.sample(
-                xt, model, x0hat, operator, measurement, sigma, step / self.annealing_scheduler.num_steps, gradient_rewards
+                xt, model, x0hat, operator, measurement, sigma,
+                step / self.annealing_scheduler.num_steps, gradient_rewards
             )
 
             # 3. forward diffusion

@@ -61,7 +61,7 @@ class Operator(ABC):
         """
         pass
 
-    def measure(self, x):
+    def measure(self, x, input_sigma=None):
         """
         Measures input data by applying the operator and adding Gaussian noise.
 
@@ -72,7 +72,8 @@ class Operator(ABC):
             torch.Tensor: Noisy measurement result.
         """
         y0 = self(x)
-        return y0 + self.sigma * torch.randn_like(y0)
+        s = input_sigma if input_sigma is not None else self.sigma
+        return y0 + s * torch.randn_like(y0)
 
     def loss(self, x, y):
         """

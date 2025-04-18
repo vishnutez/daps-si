@@ -72,6 +72,25 @@ class Reward(ABC):
         """
         pass
 
+    @abstractmethod
+    def get_gradients(self, particles, **kwargs) -> torch.Tensor:
+        """
+        Compute and return the gradient of the difference of the embedding
+        of particles with the embedding of given information.
+
+        Args:
+            particles: The particles that you want to find the gradient with respect to
+            **kwargs: Task-specific keyword arguments
+
+        Returns:
+            A torch.Tensor representing the reward(s).
+        """
+        pass
+
+    @abstractmethod
+    def set_gt_embeddings(self, **kwargs):
+        pass
+
 
 @register_reward_method('adaface')
 class AdaFaceReward(Reward):
@@ -92,7 +111,7 @@ class AdaFaceReward(Reward):
         mtcnn_model: Face detector and aligner (MTCNN).
         res (int): Target image resolution for preprocessing.
     """
-    def __init__(self, data_path: str, pretrained_model: str, resolution: int = 256, device: str = 'cuda:0', **kwargs):
+    def __init__(self, data_path: str, pretrained_model: str, resolution: int = 256, device: str = 'cuda:0', scale=1, freq=1, **kwargs):
         """
         Initializes the AdaFaceReward class.
 
@@ -111,6 +130,9 @@ class AdaFaceReward(Reward):
         self.gt_embeddings = None
         self.mtcnn_model = mtcnn.MTCNN(device=self.device, crop_size=(112, 112))
         self.res = resolution
+        self.scale = scale
+        self.freq = 1
+        self.name = 'adaface'
 
     def get_reward(self, images: torch.Tensor, **kwargs) -> torch.Tensor:
         """
@@ -182,10 +204,7 @@ class AdaFaceReward(Reward):
 
         return embeddings
 
-    def get_gradients(
-            self,
-            images: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_gradients(self, images: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args
         ----
@@ -204,7 +223,7 @@ class AdaFaceReward(Reward):
         # 1. Detect faces (no grad)
         # ------------------------------------------------------------------
         to_pil = transforms.ToPILImage()
-        bboxes: List[Tuple[int, int, int, int]] = []
+        bboxes, failed = [], []
 
         for i in range(B):
             img_uint8 = ((images[i].detach() + 1) * 127.5).clamp(0, 255).byte().cpu()
@@ -212,7 +231,11 @@ class AdaFaceReward(Reward):
             boxes, _ = self.mtcnn_model.align_multi(pil_img, limit=1)
 
             if len(boxes) == 0:  # fallback → use whole frame
-                bboxes.append((0, 0, W - 1, H - 1))
+                failed.append(i)
+                print(30 * '*', flush=True)
+                print('no face detected', flush=True)
+                print(30 * '*', flush=True)
+                bboxes.append(None)
             else:
                 x1, y1, x2, y2 = boxes[0][:4].astype(int)
                 # Clamp to valid range
@@ -220,18 +243,19 @@ class AdaFaceReward(Reward):
                 x2, y2 = min(x2, W - 1), min(y2, H - 1)
                 bboxes.append((x1, y1, x2, y2))
 
-        print(30 * '-', flush=True)
-        print('in get gradients function', flush=True)
-        print(bboxes, flush=True)
-
         # ------------------------------------------------------------------
         # 2. Differentiable crop → ( B , 3 , 112 , 112 )
         # ------------------------------------------------------------------
         face_tensors = []
-        for i, (x1, y1, x2, y2) in enumerate(bboxes):
-            crop = images[i: i + 1, :, y1: y2 + 1, x1: x2 + 1]  # keeps grad
-            crop = F.interpolate(crop, size=(112, 112),
-                                 mode='bilinear', align_corners=False)
+        for i, bb in enumerate(bboxes):
+            if bb is None:
+                crop = torch.zeros((1, 3, 112, 112), device=images.device)
+                print('returning zero gradient for no face', flush=True)
+            else:
+                x1, y1, x2, y2 = bb
+                crop = images[i: i + 1, :, y1: y2 + 1, x1: x2 + 1]  # keeps grad
+                crop = F.interpolate(crop, size=(112, 112),
+                                     mode='bilinear', align_corners=False)
             face_tensors.append(crop)
 
         faces = torch.cat(face_tensors, dim=0)  # (B, 3, 112, 112)
@@ -246,7 +270,8 @@ class AdaFaceReward(Reward):
         # ------------------------------------------------------------------
         if self.gt_embeddings is None:
             raise RuntimeError("Call set_gt_embeddings(...) first.")
-        distances = torch.norm(embeds - self.gt_embeddings, dim=1)  # (B,)
+        # distances = torch.norm(embeds - self.gt_embeddings, dim=1)  # (B,)
+        distances = ((embeds - self.gt_embeddings) ** 2).sum(dim=1)
 
         # ------------------------------------------------------------------
         # 5. Back‑prop to get ∂distance/∂image
@@ -256,6 +281,28 @@ class AdaFaceReward(Reward):
         grads = images.grad.detach()  # (B, C, H, W)
 
         return grads
+
+
+@register_reward_method('measurement')
+class MeasurementReward(Reward):
+    def __init__(self, scale=1, freq=1, **kwargs):
+        super().__init__(**kwargs)
+        self.operator = None
+        self.scale = scale
+        self.freq = freq
+        self.name = 'measurement'
+
+    def get_reward(self, images: torch.Tensor, **kwargs) -> torch.Tensor:
+        return torch.norm(kwargs.get('measurements') - self.operator.measure(images, input_sigma=0), p=2, dim=(1, 2, 3))
+
+    def get_gradients(self, images: torch.Tensor, **kwargs) -> torch.Tensor:
+        return self.operator.gradient(images, kwargs.get('measurements'), return_loss=True)
+    
+    def set_operator(self, operator):
+        self.operator = operator
+
+    def set_gt_embeddings(self, index: int, **kwargs):
+        pass
 
 
 @register_reward_method('style')

@@ -7,7 +7,7 @@ from si_data import get_dataset
 from si_sampler import get_sampler, Trajectory
 from model import get_model
 from eval import get_eval_fn, Evaluator
-from si_reward import get_reward_method
+from si_reward import get_reward_method, MeasurementReward
 from si_search import get_search_method
 from torch.nn.functional import interpolate
 from pathlib import Path
@@ -158,19 +158,19 @@ def log_results(args, sde_trajs, results, images, y, full_samples, table_markdow
 
 
 def sample_in_batch(sampler, model, x_start, operator, y, evaluator, verbose, record, gt, search_rewards,
-                    gradient_rewards, search):
+                    gradient_rewards, search, batch_size):
     """
         posterior sampling in batch
     """
     samples = []
     trajs = []
-    for s in range(0, len(x_start), search.num_particles):
+    for s in range(0, len(x_start), batch_size):
         # update evaluator to correct batch index
         for reward in search_rewards + gradient_rewards:
-            reward.set_gt_embeddings(s // search.num_particles)
-        cur_x_start = x_start[s:s + search.num_particles]
-        cur_y = y[s:s + search.num_particles]
-        cur_gt = gt[s: s + search.num_particles]
+            reward.set_gt_embeddings(s // batch_size)
+        cur_x_start = x_start[s:s + batch_size]
+        cur_y = y[s:s + batch_size]
+        cur_gt = gt[s: s + batch_size]
         cur_samples = sampler.sample(model, cur_x_start, operator, cur_y, search_rewards, gradient_rewards, search, evaluator,
                                      verbose=verbose, record=record, gt=cur_gt)
 
@@ -195,8 +195,26 @@ def main(args):
     setproctitle.setproctitle(args.name)
     print(args)
 
+    # get rewards
+    rewards_cfg = args.reward.get('rewards', [])
+    gradient_rewards = [
+        get_reward_method(cfg['name'], **{k: v for k, v in cfg.items() if k not in ['name', 'steering']})
+        for cfg in rewards_cfg if 'gradient' in cfg.get('steering', [])
+    ]
+
+    search_rewards = [
+        get_reward_method(cfg['name'], **{k: v for k, v in cfg.items() if k not in ['name', 'steering']})
+        for cfg in rewards_cfg if 'search' in cfg.get('steering', [])
+    ]
+    print(30 * '-')
+    print('we are in si_ps after get rewards')
+    print('gradient rewards are: ', gradient_rewards)
+    print('search rewards are: ', search_rewards)
+    print(30 * '-')
+
     # get data
-    data = get_dataset(**args.data, num_particles=args.search.num_particles)
+    num_particles = args.reward['num_particles']
+    data = get_dataset(**args.data, num_particles=num_particles)
     total_number = len(data)  # number of all images
     images = data.get_data(total_number, 0)  # shape=(total_number * particles, 3, 256, 256) - all the images
     print(30 * '-', flush=True)
@@ -209,6 +227,9 @@ def main(args):
     task_group = args.task[args.task_group]
     operator = get_operator(**task_group.operator)
     y = operator.measure(images)
+    for rew in gradient_rewards + search_rewards:
+        if isinstance(rew, MeasurementReward):
+            rew.set_operator(operator)
 
     # get sampler
     sampler = get_sampler(**args.sampler, mcmc_sampler_config=task_group.mcmc_sampler_config)
@@ -216,24 +237,8 @@ def main(args):
     # get model
     model = get_model(**args.model)
 
-    # get rewards
-    gradient_rewards = [
-        get_reward_method(cfg['name'], **{k: v for k, v in cfg.items() if k not in ['name', 'steering']})
-        for cfg in args.reward['rewards'] if 'gradient' in cfg.get('steering', [])
-    ]
-
-    search_rewards = [
-        get_reward_method(cfg['name'], **{k: v for k, v in cfg.items() if k not in ['name', 'steering']})
-        for cfg in args.reward['rewards'] if 'search' in cfg.get('steering', [])
-    ]
-    print(30 * '-')
-    print('we are in si_ps after get rewards')
-    print('gradient rewards are: ', gradient_rewards)
-    print('search rewards are: ', search_rewards)
-    print(30 * '-')
-
     # get search algorithm
-    search = get_search_method(**args.search)
+    search = get_search_method(num_particles=num_particles, **args.reward['search_algorithm']) if search_rewards else None
 
     # get evaluator
     eval_fn_list = []
@@ -250,8 +255,9 @@ def main(args):
         x_start = sampler.get_start(images.shape[0], model)
         samples, trajs = sample_in_batch(
             sampler, model, x_start, operator, y, evaluator, verbose=True, record=args.save_traj, gt=images,
-            search_rewards=search_rewards, gradient_rewards=gradient_rewards, search=search
+            search_rewards=search_rewards, gradient_rewards=gradient_rewards, search=search, batch_size=num_particles
         )
+        #samples, trajs = images, None
         full_samples.append(samples)
         full_trajs.append(trajs)
     full_samples = torch.stack(full_samples, dim=0)
@@ -259,6 +265,9 @@ def main(args):
     print('shape of full_samples', full_samples.shape, flush=True)  # [1, 8, 3, 256, 256]
     print('length of full_traj', len(full_trajs), flush=True)  # length of full_traj 1
     print('type of each traj', type(full_trajs[0]), flush=True)  # type of each traj <class 'cores.trajectory.Trajectory'>
+    print('y-Ax at the end for particles: ', torch.norm(y - operator.measure(samples, input_sigma=0), p=2, dim=(1, 2, 3)))
+    print('average of y-Ax: ', torch.mean(torch.norm(y - operator.measure(samples, input_sigma=0), p=2, dim=(1, 2, 3))))
+    print('average of true images y-Ax: ', torch.mean(torch.norm(y - operator.measure(images, input_sigma=0), p=2, dim=(1, 2, 3))))
     print(30 * '*', flush=True)
 
     # log metrics

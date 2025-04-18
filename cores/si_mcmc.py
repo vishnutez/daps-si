@@ -34,7 +34,7 @@ class MCMCSampler(nn.Module):
         self.mc_algo = mc_algo
         self.momentum = momentum
 
-    def score_fn(self, x, x0hat, model, xt, operator, measurement, sigma, gradient_rewards):
+    def score_fn(self, x, x0hat, model, xt, operator, measurement, sigma, gradient_rewards, mc_step):
         """
         Computes the conditional score function \nabla_x \log p(x_0 = x | x_t, y).
 
@@ -43,16 +43,22 @@ class MCMCSampler(nn.Module):
                 - Current score estimate.
                 - Data-fitting loss.
         """
-        data_fitting_grad, data_fitting_loss = operator.gradient(x, measurement, return_loss=True)
-        data_term = -data_fitting_grad / self.tau ** 2
         xt_term = (xt - x) / sigma ** 2
         prior_term = self.get_prior_score(x, x0hat, xt, model, sigma)
-        rewards_grad = torch.zeros_like(x, device=x.device)
-        # for reward in gradient_rewards:
-        #    grad = reward.get_gradient(x)
-        # add face similarity
-        # - gradient of squared / (self.rho ** 2)
-        return data_term + xt_term + prior_term, data_fitting_loss
+
+        # here we add the gradient of the rewards
+        rewards_grad_term = torch.zeros_like(x, device=x.device)
+        for reward in gradient_rewards:
+            if mc_step % reward.freq == 0:
+                if reward.name == 'measurement':
+                    data_fitting_grad, data_fitting_loss = reward.get_gradients(x, measurements=measurement)
+                    data_term = -data_fitting_grad / self.tau ** 2
+                else:
+                    rewards_grad_term += reward.scale * reward.get_gradients(x)
+
+        rewards_grad_term = -rewards_grad_term / self.tau ** 2
+
+        return data_term + xt_term + prior_term + rewards_grad_term, data_fitting_loss
 
     def get_prior_score(self, x, x0hat, xt, model, sigma):
         if self.prior_solver == 'score-min' or self.prior_solver == 'score-t' or self.prior_solver == 'gaussian':
@@ -155,8 +161,8 @@ class MCMCSampler(nn.Module):
 
         x = x0hat.clone().detach()
         pbar = tqdm.trange(self.num_steps) if verbose else range(self.num_steps)
-        for _ in pbar:
-            cur_score, fitting_loss = self.score_fn(x, x0hat, model, xt, operator, measurement, sigma, gradient_rewards)
+        for mc_step in pbar:
+            cur_score, fitting_loss = self.score_fn(x, x0hat, model, xt, operator, measurement, sigma, gradient_rewards, mc_step)
             epsilon = torch.randn_like(x)
 
             x = self.mc_update(x, cur_score, lr, epsilon)

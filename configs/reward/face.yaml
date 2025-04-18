@@ -1,5 +1,18 @@
 rewards:
+  - name: measurement
+    steering: [gradient]
+    scale: 1
+
   - name: adaface
     pretrained_model: 'ir_50'
-    steering: [gradient]
-    data_path: 'dataset/si2/additional_images'
+    steering: [search]
+    data_path: 'dataset/si_daps/additional_images'
+    scale: 0.25 # the scale for gradient in MCMC steps
+    freq: 1
+
+search_algorithm:
+  name: group-meeting
+  base: 1
+  min_group: 2
+
+num_particles: 32

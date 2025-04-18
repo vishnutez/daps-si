@@ -1,0 +1,6 @@
+rewards:
+  - name: measurement
+    steering: [gradient]
+    scale: 1 # scale for gradient in MCMC steps
+
+num_particles: 2
