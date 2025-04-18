@@ -7,6 +7,7 @@ pixel:
     lr_min_ratio: 0.01
     mc_algo: langevin
     prior_solver: gaussian
+    use_face_similarity: False
   
   operator:
     name: phase_retrieval

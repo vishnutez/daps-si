@@ -4,6 +4,8 @@ import numpy as np
 import torch.nn as nn
 from .trajectory import Trajectory
 
+from side_info_module.face_detection import FaceRecognition
+
 
 class MCMCSampler(nn.Module):
     """
@@ -22,19 +24,37 @@ class MCMCSampler(nn.Module):
         momentum (float): Momentum coefficient for HMC.
     """
 
-    def __init__(self, num_steps, lr, tau=0.01, lr_min_ratio=0.01, prior_solver='gaussian', prior_sigma_min=1e-2,
-                 mc_algo='langevin', momentum=0.9):
+    def __init__(self, num_steps, lr, num_steps_fs=None, tau=0.01, lr_min_ratio=0.01, rho=0.005, prior_solver='gaussian', prior_sigma_min=1e-2,
+                 mc_algo='langevin', momentum=0.9, **kwargs):
         super().__init__()
         self.num_steps = num_steps
+        self.num_steps_fs = num_steps_fs
         self.lr = lr
         self.tau = tau
+        self.rho = rho
         self.lr_min_ratio = lr_min_ratio
         self.prior_solver = prior_solver
         self.prior_sigma_min = prior_sigma_min
         self.mc_algo = mc_algo
         self.momentum = momentum
+        self.use_face_similarity = kwargs.get('use_face_similarity', False)
+        self.norm_order_fs = kwargs.get('norm_order_fs', 2)
+        # self.l1_reg = kwargs.get('l1_reg', 0.0)
+        # rho is the face similarity sd
+        # norm_order_fs == 2, Gaussian is modelled and so we need to divide by it gives 2 * rho^2
+        # norm_order_fs == 1, Laplacian is modelled with parameter b = rho / sqrt(2)
+        self.scale_fs = 2 * self.rho ** 2 if self.norm_order_fs == 2 else self.rho / np.sqrt(2)
+        if self.use_face_similarity:
+            print('Using face similarity as side information')
+            x_tilde = kwargs.get('x_tilde', None)
+            if x_tilde is None:
+                raise ValueError("Guidance images (x_tilde) must be provided when using face_similarity is True")
+            self.face_recognition = FaceRecognition(mtcnn_face=True, norm_order=self.norm_order_fs)
+            self.face_recognition.cuda()
+            self.x_tilde = x_tilde.cuda()
+            print('x_tilde shape:', x_tilde.shape)
 
-    def score_fn(self, x, x0hat, model, xt, operator, measurement, sigma):
+    def score_fn(self, x, x0hat, model, xt, operator, measurement, sigma, fs=False):
         """
         Computes the conditional score function \nabla_x \log p(x_0 = x | x_t, y).
 
@@ -47,6 +67,38 @@ class MCMCSampler(nn.Module):
         data_term = -data_fitting_grad / self.tau ** 2
         xt_term = (xt - x) / sigma ** 2
         prior_term = self.get_prior_score(x, x0hat, xt, model, sigma)
+
+        # # # Compute the fft of the x term
+        # x_freq = torch.fft.fft2(x, dim=(-2, -1), norm='backward')
+
+        # x_freq_real = x_freq.real
+        # x_freq_imag = x_freq.imag
+
+        # # Take gradient of l1 norm of x_freq_real, x_freq_imag 
+
+        # l1_real_grad = torch.sgn(x_freq_real)
+        # l1_imag_grad = torch.sgn(x_freq_imag)
+        # l1_freq_grad = l1_real_grad + l1_imag_grad
+        # l1_freq_grad = torch.fft.ifft2(l1_freq_grad, dim=(-2, -1), norm='backward')
+        # l1_img_grad = torch.real(l1_freq_grad) + torch.imag(l1_freq_grad) 
+
+        # print('l1_img_grad:', l1_img_grad.max().item())
+
+        # data_term -= self.l1_reg * l1_img_grad  # Take the gradient of the l1 norm of the image
+
+        # print('l1_reg_grad:', l1_reg_grad)
+
+        if self.use_face_similarity and fs:
+            face_fitting_loss, face_fitting_grad = self.face_recognition.compute_loss_and_gradient(x, self.x_tilde)           
+            face_term = - face_fitting_grad / self.scale_fs   # Norm order = 2, gives 2 * rho^2, Norm order = 1, gives rho 
+
+            # print('data term:', data_term.max().item())
+            # print('xt term:', xt_term.max().item())
+            # print('prior term:', prior_term.max().item())
+            # print('face term:', face_term.max().item()) 
+
+            return data_term + xt_term + prior_term + face_term, data_fitting_loss + face_fitting_loss
+        
         return data_term + xt_term + prior_term, data_fitting_loss
 
     def get_prior_score(self, x, x0hat, xt, model, sigma):
@@ -82,10 +134,12 @@ class MCMCSampler(nn.Module):
         if self.mc_algo == 'hmc':
             self.velocity = torch.randn_like(x0hat)
 
-    def mc_update(self, x, cur_score, lr, epsilon):
+    def mc_update(self, x, cur_score, lr, epsilon, fs=False):
         """ Performs a single Monte Carlo update step (Langevin or HMC)."""
         if self.mc_algo == 'langevin':
             x_new = x + lr * cur_score + np.sqrt(2 * lr) * epsilon
+            # print('No noise added in Langevin sampling')
+            # x_new = x + lr * cur_score
         elif self.mc_algo == 'hmc':  # (damping) hamiltonian monte carlo
             step_size = np.sqrt(lr)
             self.velocity = self.momentum * self.velocity + step_size * cur_score + np.sqrt(2 * (1 - self.momentum)) * epsilon
@@ -148,8 +202,14 @@ class MCMCSampler(nn.Module):
 
         x = x0hat.clone().detach()
         pbar = tqdm.trange(self.num_steps) if verbose else range(self.num_steps)
+        step = 0
+        freq = self.num_steps // self.num_steps_fs if self.num_steps_fs is not None else 1
         for _ in pbar:
-            cur_score, fitting_loss = self.score_fn(x, x0hat, model, xt, operator, measurement, sigma)
+            step += 1
+            if step % freq == 0 and self.num_steps_fs is not None:
+                cur_score, fitting_loss = self.score_fn(x, x0hat, model, xt, operator, measurement, sigma, fs=True)
+            else:
+                cur_score, fitting_loss = self.score_fn(x, x0hat, model, xt, operator, measurement, sigma, fs=False)
             epsilon = torch.randn_like(x)
 
             x = self.mc_update(x, cur_score, lr, epsilon)

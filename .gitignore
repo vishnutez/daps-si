@@ -1,3 +1,7 @@
+results/
+AdaFace/
+clip/
+
 ### General ###
 .DS_Store
 Thumbs.db

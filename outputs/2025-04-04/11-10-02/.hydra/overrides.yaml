@@ -1,0 +1,15 @@
+- +data=demo-celeb-ref
+- +model=ffhq256ddpm
+- +task=inpainting
+- +sampler=edm_daps
+- task_group=pixel
+- save_dir=results
+- num_runs=1
+- sampler.diffusion_scheduler_config.num_steps=5
+- sampler.annealing_scheduler_config.num_steps=200
+- batch_size=10
+- data.start_id=0
+- data.end_id=10
+- name=phase_retrieval_demo
+- gpu=0
+- +guid_data=demo-celeb-guid

@@ -7,6 +7,8 @@ from cores.scheduler import get_diffusion_scheduler, DiffusionPFODE
 from cores.mcmc import MCMCSampler
 from forward_operator import LatentWrapper
 
+from side_info_module.face_detection import FaceRecognition
+
 
 def get_sampler(**kwargs):
     latent = kwargs['latent']
@@ -23,7 +25,7 @@ class DAPS(nn.Module):
     Combines diffusion models and MCMC updates for posterior sampling from noisy measurements.
     """
 
-    def __init__(self, annealing_scheduler_config, diffusion_scheduler_config, mcmc_sampler_config):
+    def __init__(self, annealing_scheduler_config, diffusion_scheduler_config, mcmc_sampler_config, guid_images=None, use_face_similarity_outer=False, rho_outer=0.05, norm_order_fs_outer=2, num_steps_fs_outer=5):
         """
         Initializes the DAPS sampler with the provided scheduler and sampler configurations.
 
@@ -37,7 +39,21 @@ class DAPS(nn.Module):
                                                                              diffusion_scheduler_config)
         self.annealing_scheduler = get_diffusion_scheduler(**annealing_scheduler_config)
         self.diffusion_scheduler_config = diffusion_scheduler_config
-        self.mcmc_sampler = MCMCSampler(**mcmc_sampler_config)
+        self.mcmc_sampler = MCMCSampler(**mcmc_sampler_config, x_tilde=guid_images)
+        self.x_tilde = guid_images
+        self.rho_outer = rho_outer
+        self.norm_order_fs_outer = norm_order_fs_outer
+        self.use_face_similarity_outer = use_face_similarity_outer
+        self.scale_fs_outer = 2 * self.rho_outer ** 2 if self.norm_order_fs_outer == 2 else self.rho_outer / np.sqrt(2)
+        self.num_steps_fs_outer = num_steps_fs_outer
+        if self.use_face_similarity_outer:
+            print('Using face similarity as side information')
+            if self.x_tilde is None:
+                raise ValueError("Guidance images (x_tilde) must be provided when use_face_similarity_outer is True")
+            self.face_recognition = FaceRecognition(mtcnn_face=True, norm_order=self.norm_order_fs_outer)
+            self.face_recognition.cuda()
+            self.x_tilde.cuda()
+            print('x_tilde_outer shape:', self.x_tilde.shape)
 
     def sample(self, model, x_start, operator, measurement, evaluator=None, record=False, verbose=False, **kwargs):
         """
@@ -68,6 +84,18 @@ class DAPS(nn.Module):
                 diffusion_scheduler = get_diffusion_scheduler(**self.diffusion_scheduler_config, sigma_max=sigma)
                 sampler = DiffusionPFODE(model, diffusion_scheduler, solver='euler')
                 x0hat = sampler.sample(xt)
+
+                scale_fs_outer_t = self.scale_fs_outer *  (1 - step / self.annealing_scheduler.num_steps)
+
+            if self.use_face_similarity_outer:
+                print('Doing outer face similarity fitting in x0-step')
+                for i in range(self.num_steps_fs_outer):
+                    face_fitting_loss, face_fitting_grad = self.face_recognition.compute_loss_and_gradient(x0hat, self.x_tilde)           
+                    face_term = - face_fitting_grad / self.scale_fs_outer  # Norm order = 2, gives 2 * rho^2, Norm order = 1, gives rho
+                    print('face term max =', face_term.max())
+                    print('face term mean =', face_term.mean())
+                    x0hat += face_term 
+                
 
             # 2. MCMC update
             x0y = self.mcmc_sampler.sample(xt, model, x0hat, operator, measurement, sigma, step / self.annealing_scheduler.num_steps)

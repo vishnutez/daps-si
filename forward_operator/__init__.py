@@ -147,21 +147,28 @@ def random_sq_bbox(img, mask_shape, image_size=256, margin=(16, 16)):
     return mask, t, t + h, l, l + w
 
 
+
+
+
 class mask_generator:
     def __init__(self, mask_type, mask_len_range=None, mask_prob_range=None,
-                 image_size=256, margin=(32, 32)):
+                 image_size=256, margin=(32, 32), top=64, left=64, height=96, width=96):
         """
         (mask_len_range): given in (min, max) tuple.
         Specifies the range of box size in each dimension
         (mask_prob_range): for the case of random masking,
         specify the probability of individual pixels being masked
         """
-        assert mask_type in ['box', 'random', 'both', 'extreme']
+        assert mask_type in ['box', 'random', 'both', 'extreme', 'box_deterministic']
         self.mask_type = mask_type
         self.mask_len_range = mask_len_range
         self.mask_prob_range = mask_prob_range
         self.image_size = image_size
         self.margin = margin
+        self.t = top
+        self.l = left
+        self.h = height
+        self.w = width
 
     def _retrieve_box(self, img):
         l, h = self.mask_len_range
@@ -187,6 +194,20 @@ class mask_generator:
         mask = torch.ones_like(img, device=img.device)
         mask[:, ...] = mask_b
         return mask
+    
+    def _retrieve_box_deterministic(self, img):
+
+        t = self.t
+        l = self.l
+        h = self.h
+        w = self.w
+
+        print('t, l, h, w:', t, l, h, w)
+
+        mask = torch.ones_like(img, device=img.device)
+        mask[..., t:t+h, l:l+w] = 0
+
+        return mask, t, t+h, l, l+w
 
     def __call__(self, img):
         if self.mask_type == 'random':
@@ -199,14 +220,18 @@ class mask_generator:
             mask, t, th, w, wl = self._retrieve_box(img)
             mask = 1. - mask
             return mask
+        elif self.mask_type == 'box_deterministic':
+            print('Generating deterministic box mask')
+            mask, t, th, w, wl = self._retrieve_box_deterministic(img)
+            return mask
 
 
 @register_operator(name='inpainting')
 class Inpainting(Operator):
     def __init__(self, mask_type, mask_len_range=None, mask_prob_range=None, resolution=256, device='cuda',
-                 sigma=0.05):
+                 sigma=0.05, top=64, left=64, height=96, width=96):
         super().__init__(sigma)
-        self.mask_gen = mask_generator(mask_type, mask_len_range, mask_prob_range, resolution)
+        self.mask_gen = mask_generator(mask_type, mask_len_range, mask_prob_range, resolution, top=top, left=left, height=height, width=width)
         self.mask = None  # [B, 1, H, W]
 
     def __call__(self, x):

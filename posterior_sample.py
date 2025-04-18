@@ -17,6 +17,7 @@ from PIL import Image
 import numpy as np
 import imageio
 import os
+import datetime
 
 
 def resize(y, x, task_name):
@@ -111,6 +112,12 @@ def log_results(args, sde_trajs, results, images, y, full_samples, table_markdow
     full_samples = full_samples.flatten(0, 1)
     os.makedirs(args.save_dir, exist_ok=True)
     save_dir = safe_dir(Path(args.save_dir))
+    
+    # Set args.name to timestamp if it's 'demo'
+    if args.name == 'demo':
+        current_time = datetime.datetime.now()
+        args.name = current_time.strftime("%y-%m-%d-%H-%M-%S")
+        
     root = safe_dir(save_dir / args.name)
     with open(str(root / 'config.yaml'), 'w') as file:
         yaml.safe_dump(OmegaConf.to_container(args, resolve=True), file, default_flow_style=False, allow_unicode=True)
@@ -193,14 +200,24 @@ def main(args):
     data = get_dataset(**args.data)
     total_number = len(data)
     images = data.get_data(total_number, 0)
+    print('images shape:', images.shape)
 
     # get operator & measurement
     task_group = args.task[args.task_group]
     operator = get_operator(**task_group.operator)
     y = operator.measure(images)
 
+    # get face guidance data is use_face_similarity is True
+    if task_group.mcmc_sampler_config.use_face_similarity:
+        guid_data = get_dataset(**args.guid_data)
+        guid_images = guid_data.get_data(total_number, 0)
+        print('guid images shape:', guid_images.shape)
+    else:
+        guid_images = None
+        print('no face similarity')
+
     # get sampler
-    sampler = get_sampler(**args.sampler, mcmc_sampler_config=task_group.mcmc_sampler_config)
+    sampler = get_sampler(**args.sampler, mcmc_sampler_config=task_group.mcmc_sampler_config, guid_images=guid_images)
 
     # get model
     model = get_model(**args.model)
