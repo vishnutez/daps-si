@@ -1,0 +1,14 @@
+- +data=demo-ffhq
+- +model=stable-diffusion-v1.5
+- +task=motion_blur
+- +sampler=sd_edm_daps
+- task_group=sd
+- save_dir=results/sd/ffhq
+- num_runs=1
+- sampler.diffusion_scheduler_config.num_steps=2
+- sampler.annealing_scheduler_config.num_steps=50
+- batch_size=2
+- name=motion_blur
+- data.start_id=0
+- data.end_id=2
+- gpu=0

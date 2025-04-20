@@ -7,7 +7,7 @@ from si_data import get_dataset
 from si_sampler import get_sampler, Trajectory
 from model import get_model
 from eval import get_eval_fn, Evaluator
-from si_reward import get_reward_method, MeasurementReward
+from si_reward import get_reward_method, MeasurementReward, StyleReward
 from si_search import get_search_method
 from torch.nn.functional import interpolate
 from pathlib import Path
@@ -223,6 +223,9 @@ def main(args):
     print('shape of images: ', images.shape, flush=True)
     print(30 * '-')
 
+    # get model
+    model = get_model(**args.model)
+
     # get operator & measurement
     task_group = args.task[args.task_group]
     operator = get_operator(**task_group.operator)
@@ -230,12 +233,11 @@ def main(args):
     for rew in gradient_rewards + search_rewards:
         if isinstance(rew, MeasurementReward):
             rew.set_operator(operator)
+        if isinstance(rew, StyleReward):
+            rew.set_model(model)
 
     # get sampler
     sampler = get_sampler(**args.sampler, mcmc_sampler_config=task_group.mcmc_sampler_config)
-
-    # get model
-    model = get_model(**args.model)
 
     # get search algorithm
     search = get_search_method(num_particles=num_particles, **args.reward['search_algorithm']) if search_rewards else None

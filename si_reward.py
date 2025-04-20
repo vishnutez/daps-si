@@ -308,13 +308,12 @@ class MeasurementReward(Reward):
 
 @register_reward_method('style')
 class StyleReward:
-    def __init__(self, model, data_path: str, device: str = 'cuda:0', scale=1,
+    def __init__(self, data_path: str, device: str = 'cuda:0', scale=1,
                  freq=1, **kwargs):
         super().__init__(**kwargs)
 
-        from src.clip.clip.base_clip import CLIPEncoder
+        from clip.base_clip import CLIPEncoder
 
-        self.model = model  # diffusion model for decoding the latents
         self.clip_encoder = CLIPEncoder().cuda()  # trained-model for style transfer
         file_types = ['*.jpg', '*.JPG', '*.jpeg', '*.JPEG', '*.png', '*.PNG']
         self.device = device
@@ -323,15 +322,29 @@ class StyleReward:
         self.scale = scale
         self.freq = 1
         self.name = 'style'
+        self.preprocess = transforms.Normalize(
+            (0.48145466*2-1, 0.4578275*2-1, 0.40821073*2-1),
+            (0.26862954*2, 0.26130258*2, 0.27577711*2)
+        )
         self.to_tensor = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
         ])
 
+    def set_model(self, model):
+        self.model = model
+        self.model.eval()
+
+
     def get_reward(self, latents):  # images (B, C, H, W) in [-1, 1]
         images = self.model.decode(latents)
-        embd_gram = self._embeddings(images)
-        return -torch.linalg.norm(self.gt_embeddings - embd_gram, axis=(-1, -2))
+
+        # preprocess
+        images = F.interpolate(images, size=(224, 224), mode='bicubic')
+        images = self.preprocess(images)
+
+        embeddings = self._embeddings(images)
+        return -torch.linalg.norm(self.gt_embeddings - embeddings, axis=(-1, -2))
 
 
     def set_gt_embeddings(self, index: int):
@@ -353,9 +366,11 @@ class StyleReward:
         # Set gt embedding
         self.gt_embeddings = self._embeddings(img).detach()  # gram matrix of the embd
 
+        print('gt embeddings shape: ', self.gt_embeddings.shape)
+
     def _embeddings(self, tensor_images):
 
-        emb, feats = self.clip_model.encode_image_with_features(tensor_images)
+        emb, feats = self.clip_encoder.clip_model.encode_image_with_features(tensor_images)
         feat = feats[2][1:, :, :]  # get the last layer features
         feat = feat.permute(1, 0, 2)
         feat_T = feat.permute(0, 2, 1)  # T -> transpose

@@ -160,7 +160,8 @@ class LatentDAPS(DAPS):
 
     Implements posterior sampling using a latent diffusion model combined with MCMC updates
     """
-    def sample(self, model, z_start, operator, measurement, evaluator=None, record=False, verbose=False, **kwargs):
+    def sample(self, model, z_start, operator, measurement, search_rewards, gradient_rewards, search, evaluator=None, 
+                record=False, verbose=False, **kwargs):
         """
         Performs sampling using LatentDAPS in latent space, decoding intermediate results.
 
@@ -194,7 +195,7 @@ class LatentDAPS(DAPS):
                 x0hat = model.decode(z0hat)
 
             # 2. MCMC update
-            z0y = self.mcmc_sampler.sample(zt, model, z0hat, warpped_operator, measurement, sigma, step / self.annealing_scheduler.num_steps)
+            z0y = self.mcmc_sampler.sample(zt, model, z0hat, warpped_operator, measurement, sigma, step / self.annealing_scheduler.num_steps, gradient_rewards)
             with torch.no_grad():
                 x0y = model.decode(z0y)
 

@@ -48,6 +48,8 @@ class MCMCSampler(nn.Module):
 
         # here we add the gradient of the rewards
         rewards_grad_term = torch.zeros_like(x, device=x.device)
+        data_term = torch.zeros_like(x, device=x.device)
+        data_fitting_loss = 0
         for reward in gradient_rewards:
             if mc_step % reward.freq == 0:
                 if reward.name == 'measurement':

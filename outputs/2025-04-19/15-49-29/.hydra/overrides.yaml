@@ -1,0 +1,15 @@
+- +data=demo-ffhq
+- +model=stable-diffusion-v1.5-style
+- +task=si_style
+- +sampler=sd_edm_daps
+- +reward=style
+- task_group=sd
+- save_dir=results/sd/style
+- num_runs=1
+- sampler.diffusion_scheduler_config.num_steps=2
+- sampler.annealing_scheduler_config.num_steps=50
+- batch_size=2
+- name=style_transfer
+- data.start_id=0
+- data.end_id=2
+- gpu=0
