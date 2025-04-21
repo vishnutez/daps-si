@@ -2,6 +2,8 @@ results/
 AdaFace/
 clip/
 logs/
+results*/
+outputs*/
 
 ### General ###
 .DS_Store

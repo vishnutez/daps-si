@@ -15,35 +15,33 @@ singularity shell /mnt/lab_files/ECEN403-404/containers/cuda_10.2-cudnn7-py36.si
 
 # # motion blur
 # python posterior_sample.py \
-#     +data=demo-ffhq \
-#     +model=ffhq256ldm \
-#     +task=motion_blur \
-#     +sampler=latent_edm_daps \
-#     task_group=ldm \
-#     save_dir=results/ldm/ffhq \
-#     num_runs=1 \
-#     sampler.diffusion_scheduler_config.num_steps=2 \
-#     sampler.annealing_scheduler_config.num_steps=50 \
-#     batch_size=2 \
-#     name=motion_blur \
-#     data.start_id=0 \
-#     data.end_id=2 \
-#     gpu=0; 
+#         +data=demo-ffhq \
+#         +model=ffhq256ldm \
+#         +task=motion_blur \
+#         +sampler=latent_edm_daps \
+#         task_group=ldm \
+#         save_dir=results_ldm_3/ldm/ffhq \
+#         num_runs=1 \
+#         sampler.diffusion_scheduler_config.num_steps=2 \
+#         sampler.annealing_scheduler_config.num_steps=50 \
+#         batch_size=2 \
+#         name=motion_blur \
+#         data.start_id=0 \
+#         data.end_id=2 \
+#         gpu=0; 
 
-# motion blur
+# style
 python si_ps.py \
         +data=demo-ffhq \
         +model=stable-diffusion-v1.5-style \
         +task=si_style \
         +sampler=sd_edm_daps \
         +reward=style \
+        seed=8 \
         task_group=sd \
         save_dir=results/sd/style \
         num_runs=1 \
-        sampler.diffusion_scheduler_config.num_steps=2 \
-        sampler.annealing_scheduler_config.num_steps=50 \
-        batch_size=2 \
         name=style_transfer \
         data.start_id=0 \
-        data.end_id=2 \
+        data.end_id=9 \
         gpu=0;

@@ -330,17 +330,24 @@ class StyleReward:
             transforms.ToTensor(),
             transforms.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
         ])
+        self.model = None
+        self.res = 224
+        self.decode_latents = False
 
     def set_model(self, model):
         self.model = model
         self.model.eval()
+        self.decode_latents = True
 
 
     def get_reward(self, latents):  # images (B, C, H, W) in [-1, 1]
-        images = self.model.decode(latents)
+        if self.decode_latents:
+            images = self.model.decode(latents)
+        else:
+            images = latents
 
         # preprocess
-        images = F.interpolate(images, size=(224, 224), mode='bicubic')
+        images = F.interpolate(images, size=(self.res, self.res), mode='bicubic')
         images = self.preprocess(images)
 
         embeddings = self._embeddings(images)
@@ -358,7 +365,7 @@ class StyleReward:
         # Load and preprocess image
 
         img = Image.open(self.files[index]).convert('RGB')
-        image = img.resize((224, 224), Image.Resampling.BILINEAR)
+        image = img.resize((self.res, self.res), Image.Resampling.BILINEAR)
         img = self.to_tensor(image)
         img = torch.unsqueeze(img, 0)
         img = img.cuda()
