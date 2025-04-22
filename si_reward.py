@@ -318,6 +318,7 @@ class StyleReward:
         file_types = ['*.jpg', '*.JPG', '*.jpeg', '*.JPEG', '*.png', '*.PNG']
         self.device = device
         self.files = sorted([f for ft in file_types for f in Path(data_path).rglob(ft)])
+        print('files: ', self.files)
         self.gt_embeddings = None
         self.scale = scale
         self.freq = 1
@@ -363,6 +364,8 @@ class StyleReward:
             index (int): Index of the reference image in the dataset list.
         """
         # Load and preprocess image
+
+        print('index: ', index)
 
         img = Image.open(self.files[index]).convert('RGB')
         image = img.resize((self.res, self.res), Image.Resampling.BILINEAR)

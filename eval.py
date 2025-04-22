@@ -210,30 +210,30 @@ class LearnedPerceptualImagePatchSimilarity(EvalFn):
         return res
     
 
-from si_reward import StyleReward
+# from si_reward import StyleReward
 
-@register_eval_fn('style_loss')
-class StyleLoss(EvalFn):
-    cmp = 'min'
-    def __init__(self, batch_size=128):
-        self.batch_size = batch_size
-        self.face_recognition = StyleReward(mtcnn_face=True, norm_order=1)
-        self.face_recognition.cuda()
+# @register_eval_fn('style_loss')
+# class StyleLoss(EvalFn):
+#     cmp = 'min'
+#     def __init__(self, batch_size=128):
+#         self.batch_size = batch_size
+#         self.face_recognition = StyleReward(mtcnn_face=True, norm_order=1)
+#         self.face_recognition.cuda()
 
-    def evaluate_in_batch(self, gt, pred):
-        batch_size = self.batch_size
-        results = []
-        for start in range(0, gt.shape[0], batch_size):
-            res = self.face_recognition.compute_loss(gt[start:start+batch_size], pred[start:start+batch_size])
-            results.append(res)
-        results = torch.cat(results, dim=0)
-        return results
+#     def evaluate_in_batch(self, gt, pred):
+#         batch_size = self.batch_size
+#         results = []
+#         for start in range(0, gt.shape[0], batch_size):
+#             res = self.face_recognition.compute_loss(gt[start:start+batch_size], pred[start:start+batch_size])
+#             results.append(res)
+#         results = torch.cat(results, dim=0)
+#         return results
     
-    def __call__(self, gt, measurement, sample, reduction='none'):
-        res = self.evaluate_in_batch(gt, sample)
-        if reduction == 'mean':
-            res = res.mean()
-        return res
+#     def __call__(self, gt, measurement, sample, reduction='none'):
+#         res = self.evaluate_in_batch(gt, sample)
+#         if reduction == 'mean':
+#             res = res.mean()
+#         return res
     
     
 from side_info_module.face_detection import FaceRecognition

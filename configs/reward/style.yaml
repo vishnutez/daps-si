@@ -1,8 +1,8 @@
 rewards:
   - name: style
     steering: [gradient]
-    data_path: 'dataset/si_daps/style_images'
-    scale: 2 # the scale for gradient in MCMC steps
-    freq: 10
+    data_path: 'dataset/si-daps/style_images'
+    scale: 0.1 # the scale for gradient in MCMC steps
+    freq: 5
 
 num_particles: 1
