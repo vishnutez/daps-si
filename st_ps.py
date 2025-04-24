@@ -3,10 +3,10 @@ import yaml
 import torch
 from torchvision.utils import save_image
 from forward_operator import get_operator
-from si_data import get_dataset
+from data import get_dataset
 from si_sampler import get_sampler, Trajectory
 from model import get_model
-from eval import get_eval_fn, Evaluator
+from st_eval import get_eval_fn, Evaluator
 from si_reward import get_reward_method, MeasurementReward, StyleReward
 from si_search import get_search_method
 from torch.nn.functional import interpolate
@@ -118,8 +118,8 @@ def log_results(args, sde_trajs, results, images, y, full_samples, table_markdow
         yaml.safe_dump(OmegaConf.to_container(args, resolve=True), file, default_flow_style=False, allow_unicode=True)
 
     # log grid results
-    resized_y = resize(y, images, args.task[args.task_group].operator.name)
-    stack = torch.cat([images, resized_y, full_samples])
+    # resized_y = resize(y, images, args.task[args.task_group].operator.name)
+    stack = torch.cat([images, full_samples])
     save_image(stack * 0.5 + 0.5, fp=str(root / 'grid_results.png'), nrow=total_number)
 
     # log individual sample instances
@@ -149,7 +149,7 @@ def log_results(args, sde_trajs, results, images, y, full_samples, table_markdow
             xt_traj = sde_traj.tensor_data['xt']
             for idx in range(total_number):
                 video_path = str(traj_dir / '{:05d}_run{:04d}.mp4'.format(idx, run))
-                save_mp4_video(images[idx], resized_y[idx], x0hat_traj[:, idx], x0y_traj[:, idx], xt_traj[:, idx], video_path)
+                # save_mp4_video(images[idx], resized_y[idx], x0hat_traj[:, idx], x0y_traj[:, idx], xt_traj[:, idx], video_path)
 
     # log the evaluation metrics
     with open(str(root / 'eval.md'), 'w') as file:
@@ -158,7 +158,7 @@ def log_results(args, sde_trajs, results, images, y, full_samples, table_markdow
 
 
 def sample_in_batch(sampler, model, x_start, operator, y, evaluator, verbose, record, gt, search_rewards,
-                    gradient_rewards, search, batch_size):
+                    gradient_rewards, search, batch_size, text='a knight riding a horse'):
     """
         posterior sampling in batch
     """
@@ -172,7 +172,7 @@ def sample_in_batch(sampler, model, x_start, operator, y, evaluator, verbose, re
         cur_y = y[s:s + batch_size]
         cur_gt = gt[s: s + batch_size]
         cur_samples = sampler.sample(model, cur_x_start, operator, cur_y, search_rewards, gradient_rewards, search, evaluator,
-                                     verbose=verbose, record=record, gt=cur_gt)
+                                     verbose=verbose, record=record, gt=cur_gt, text=text)
 
         samples.append(cur_samples)
         if record:
@@ -206,6 +206,10 @@ def main(args):
         get_reward_method(cfg['name'], **{k: v for k, v in cfg.items() if k not in ['name', 'steering']})
         for cfg in rewards_cfg if 'search' in cfg.get('steering', [])
     ]
+
+    text = args.model['prompt']
+    print('text: ', text)
+    
     print(30 * '-')
     print('we are in si_ps after get rewards')
     print('gradient rewards are: ', gradient_rewards)
@@ -214,8 +218,14 @@ def main(args):
 
     # get data
     num_particles = args.reward['num_particles']
-    data = get_dataset(**args.data, num_particles=num_particles)
+
+    # we need to modify the get_data part here
+    
+    data = get_dataset(**args.data)
+
+    print('data: ', data)
     total_number = len(data)  # number of all images
+
     images = data.get_data(total_number, 0)  # shape=(total_number * particles, 3, 256, 256) - all the images
     print(30 * '-', flush=True)
     print('log of get data', flush=True)
@@ -273,7 +283,7 @@ def main(args):
     print(30 * '*', flush=True)
 
     # log metrics
-    results = evaluator.report(images, y, full_samples)
+    results = evaluator.report(images, y, full_samples, text=text)
     markdown_text = evaluator.display(results)
     print(markdown_text)
 

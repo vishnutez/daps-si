@@ -58,6 +58,7 @@ class DAPS(nn.Module):
         Returns:
             torch.Tensor: Final sampled tensor/state.
         """
+        text = kwargs.get('text', None)
         if record:
             self.trajectory = Trajectory()
         pbar = tqdm.trange(self.annealing_scheduler.num_steps - 1) if verbose else range(self.annealing_scheduler.num_steps - 1)
@@ -101,8 +102,8 @@ class DAPS(nn.Module):
             if evaluator and 'gt' in kwargs:
                 with torch.no_grad():
                     gt = kwargs['gt']
-                    x0hat_results = evaluator(gt, measurement, x0hat)
-                    x0y_results = evaluator(gt, measurement, x0y)
+                    x0hat_results = evaluator(gt, measurement, x0hat, text=text)
+                    x0y_results = evaluator(gt, measurement, x0y, text=text)
 
                 # record
                 if verbose:

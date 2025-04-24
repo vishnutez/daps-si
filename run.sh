@@ -1,14 +1,15 @@
-# motion blur
-python posterior_sample.py \
-    +data=demo-ffhq \
-    +model=ffhq256ldm \
-    +task=motion_blur \
-    +sampler=latent_edm_daps \
-    task_group=ldm \
-    save_dir=results/ldm/ffhq \
-    num_runs=1 \
-    sampler.diffusion_scheduler_config.num_steps=2 \
-    sampler.annealing_scheduler_config.num_steps=50 \
-    batch_size=10 \
-    name=motion_blur \
-    gpu=0; 
+# style
+python st_ps.py \
+        +data=style \
+        +model=stable-diffusion-v1.5-style \
+        +task=style_transfer \
+        +sampler=sd_edm_daps \
+        +reward=style \
+        seed=8 \
+        task_group=sd \
+        save_dir=results/sd/style \
+        num_runs=1 \
+        name=style_transfer \
+        data.start_id=0 \
+        data.end_id=9 \
+        gpu=0;

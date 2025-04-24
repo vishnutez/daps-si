@@ -305,9 +305,95 @@ class MeasurementReward(Reward):
         pass
 
 
+@register_reward_method('ref_style')
+class StyleReward(Reward):
+    def __init__(self, device: str = 'cuda:0', scale=1, **kwargs):
+        super().__init__(**kwargs)
+
+        from clip.base_clip import CLIPEncoder
+
+        self.clip_encoder = CLIPEncoder().cuda()  # trained-model for style transfer
+        self.scale = scale
+        self.freq = 1
+        self.name = 'style'
+        self.preprocess = transforms.Normalize(
+            (0.48145466*2-1, 0.4578275*2-1, 0.40821073*2-1),
+            (0.26862954*2, 0.26130258*2, 0.27577711*2)
+        )
+        self.to_tensor = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
+        ])
+        self.model = None
+        self.res = 224
+        self.decode_latents = False
+        self.device = device
+        self.ref_embeddings = None
+
+    def set_model(self, model):
+        self.model = model
+        self.model.eval()
+        self.decode_latents = True
+
+
+    def get_reward(self, latents):  # images (B, C, H, W) in [-1, 1]
+    
+        if self.decode_latents:
+            images = self.model.decode(latents)
+        else:
+            images = latents
+
+        # preprocess gen images
+        images = F.interpolate(images, size=(self.res, self.res), mode='bicubic')
+        images = self.preprocess(images)
+        embeddings = self._embeddings(images)
+
+        return -torch.linalg.norm(self.ref_embeddings - embeddings, axis=(-1, -2))  # reward and hence the minus sign
+
+
+    def set_ref_embeddings(self, ref_images):
+        """
+        Sets the ground-truth embedding by loading and embedding the additional image
+        at the given index in the dataset.
+
+        Args:
+            ref_images: Tensor of reference images (B, C, H, W) in [-1, 1].
+        """
+        # Load and preprocess image
+
+        ref_images = F.interpolate(ref_images, size=(self.res, self.res), mode='bicubic')
+        ref_images = self.preprocess(ref_images)
+        if len(ref_images) == 3:  # if only one image is passed
+            ref_images = ref_images.unsqueeze(0)
+        ref_images = ref_images.to(self.device)
+
+        # Set ref embedding
+        self.ref_embeddings = self._embeddings(ref_images).detach()  # gram matrix of the embd
+        print('ref embeddings shape: ', self.ref_embeddings.shape)
+
+
+    def _embeddings(self, images):
+
+        emb, feats = self.clip_encoder.clip_model.encode_image_with_features(images)
+        feat = feats[2][1:, :, :]  # get the last layer features
+        feat = feat.permute(1, 0, 2)
+        feat_T = feat.permute(0, 2, 1)  # T -> transpose
+        feat_gram_mat = torch.bmm(feat_T, feat)  # multiply the two matrices broadcasting the dimension
+
+        return feat_gram_mat
+    
+    def get_gradients(self, latents: torch.Tensor, ref_images: torch.Tensor):
+
+        latents = latents.clone().detach().requires_grad_(True)
+        loss = -self.get_reward(latents, ref_images)  # distances
+        loss_grad = torch.autograd.grad(loss.sum(), latents)[0]  # returns only the gradients
+
+        return loss_grad.detach()
+
+
 
 @register_reward_method('style')
-class StyleReward:
+class StyleReward(Reward):
     def __init__(self, data_path: str, device: str = 'cuda:0', scale=1,
                  freq=1, **kwargs):
         super().__init__(**kwargs)

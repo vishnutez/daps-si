@@ -2,7 +2,7 @@
 #SBATCH --job-name=dm      # Job name
 #SBATCH --mail-type=BEGIN,END,FAIL            # Mail events (NONE, BEGIN, END, FAIL, ALL)
 #SBATCH --mail-user=vishnukunde@tamu.edu  #Where to send mail    
-#SBATCH --ntasks=8                      # Run on a 8 cpus (max)
+#SBATCH --ntasks=1                      # Run on a 8 cpus (max)
 #SBATCH --gres=gpu:a100:1              # Run on a single GPU (max)
 #SBATCH --partition=gpu-research                 # Select GPU Partition
 #SBATCH --qos=olympus-research-gpu          # Specify GPU queue
@@ -30,11 +30,11 @@ singularity shell /mnt/lab_files/ECEN403-404/containers/cuda_10.2-cudnn7-py36.si
 #         data.end_id=2 \
 #         gpu=0; 
 
-# style
-python si_ps.py \
-        +data=demo-ffhq \
+# style_transfer
+python st_ps.py \
+        +data=style \
         +model=stable-diffusion-v1.5-style \
-        +task=si_style \
+        +task=style_transfer \
         +sampler=sd_edm_daps \
         +reward=style \
         seed=8 \
@@ -43,5 +43,5 @@ python si_ps.py \
         num_runs=1 \
         name=style_transfer \
         data.start_id=0 \
-        data.end_id=9 \
+        data.end_id=2 \
         gpu=0;
