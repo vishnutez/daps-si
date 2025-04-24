@@ -267,7 +267,7 @@ def main(args):
         x_start = sampler.get_start(images.shape[0], model)
         samples, trajs = sample_in_batch(
             sampler, model, x_start, operator, y, evaluator, verbose=True, record=args.save_traj, gt=images,
-            search_rewards=search_rewards, gradient_rewards=gradient_rewards, search=search, batch_size=num_particles
+            search_rewards=search_rewards, gradient_rewards=gradient_rewards, search=search, batch_size=num_particles, text=text,
         )
         #samples, trajs = images, None
         full_samples.append(samples)

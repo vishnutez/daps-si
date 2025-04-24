@@ -42,6 +42,6 @@ python st_ps.py \
         save_dir=results/sd/style \
         num_runs=1 \
         name=style_transfer \
-        data.start_id=0 \
-        data.end_id=2 \
+        data.start_id=2 \
+        data.end_id=4 \
         gpu=0;
