@@ -8,10 +8,3 @@ sd:
     momentum: 0.60
     mc_algo: hmc
     prior_solver: gaussian
-
-  operator:
-    name: inpainting
-    mask_type: box
-    mask_len_range: [128, 129]
-    resolution: 256
-    sigma: 0.01

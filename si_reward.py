@@ -306,7 +306,7 @@ class MeasurementReward(Reward):
 
 
 @register_reward_method('ref_style')
-class StyleReward(Reward):
+class RefStyleReward(Reward):
     def __init__(self, device: str = 'cuda:0', scale=1, **kwargs):
         super().__init__(**kwargs)
 
@@ -382,13 +382,16 @@ class StyleReward(Reward):
 
         return feat_gram_mat
     
-    def get_gradients(self, latents: torch.Tensor, ref_images: torch.Tensor):
+    def get_gradients(self, latents: torch.Tensor):
 
         latents = latents.clone().detach().requires_grad_(True)
-        loss = -self.get_reward(latents, ref_images)  # distances
-        loss_grad = torch.autograd.grad(loss.sum(), latents)[0]  # returns only the gradients
+        value = self.get_reward(latents)  # distances
+        value_grad = torch.autograd.grad(value.sum(), latents)[0]  # returns only the gradients
 
-        return loss_grad.detach()
+        return value_grad.detach(), value.sum()
+    
+    def set_gt_embeddings(self, index: int, **kwargs):
+        pass
 
 
 

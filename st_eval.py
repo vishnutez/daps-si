@@ -32,7 +32,7 @@ class Evaluator:
         """
         return self.eval_fn[self.main_eval_fn_name]
 
-    def __call__(self, gt, measurement, x, reduction='mean', **kwargs):
+    def __call__(self, gt, x, reduction='mean', **kwargs):
         """
             Computes evaluation metrics for the given input.
 
@@ -45,13 +45,13 @@ class Evaluator:
         """
         results = {}
         for eval_fn_name, eval_fn in self.eval_fn.items():
-            results[eval_fn_name] = eval_fn(gt, measurement, x, reduction, **kwargs)
+            results[eval_fn_name] = eval_fn(gt, x, reduction, **kwargs)
         return results
 
     def to_list(self, x):
         return x.cpu().detach().tolist()
 
-    def report(self, gt, measurement, x, **kwargs):
+    def report(self, gt, x, **kwargs):
         '''x: [N, B, C, H, W] or [B, C, H, W]'''
         if len(x.shape) == 4:
             x = x[None]
@@ -61,10 +61,12 @@ class Evaluator:
         broadcasted_shape = torch.broadcast_shapes(x.shape, gt.shape)
         x0_flatten = gt.expand(broadcasted_shape).flatten(0, 1)
         x_flatten = x.expand(broadcasted_shape).flatten(0, 1)
-        y_flatten = measurement.expand((broadcasted_shape[0], *measurement.shape)).flatten(0, 1)
+
+        print('x0_flatten:', x0_flatten.shape)
+        print('x_flatten:', x_flatten.shape)
 
         for key, fn in self.eval_fn.items():
-            value = fn(x0_flatten, y_flatten, x_flatten, reduction='none', **kwargs).reshape(broadcasted_shape[0], -1)
+            value = fn(x0_flatten, x_flatten, reduction='none', **kwargs).reshape(broadcasted_shape[0], -1)
             result_dicts[key] = {
                 'sample': self.to_list(value.permute(1, 0)),
                 'mean': self.to_list(value.mean(0)),
@@ -166,7 +168,7 @@ class EvalFn(ABC):
         return (x * 0.5 + 0.5).clip(0, 1)
 
     @abstractmethod
-    def __call__(self, gt, measurement, sample, reduction='none', **kwargs):
+    def __call__(self, gt, sample, reduction='none', **kwargs):
         pass
 
 
@@ -174,7 +176,7 @@ class EvalFn(ABC):
 class PeakSignalNoiseRatio(EvalFn):
     cmp = 'max'  # the higher, the better
 
-    def __call__(self, gt, measurement, sample, reduction='none', **kwargs):
+    def __call__(self, gt, sample, reduction='none', **kwargs):
         return psnr(self.norm(gt), self.norm(sample), data_range=1.0, reduction=reduction)
 
 
@@ -182,7 +184,7 @@ class PeakSignalNoiseRatio(EvalFn):
 class StructuralSimilarityIndexMeasure(EvalFn):
     cmp = 'max'  # the higher, the better
 
-    def __call__(self, gt, measurement, sample, reduction='none', **kwargs):
+    def __call__(self, gt, sample, reduction='none', **kwargs):
         return ssim(self.norm(gt), self.norm(sample), data_range=1.0, reduction=reduction)
 
 
@@ -203,7 +205,7 @@ class LearnedPerceptualImagePatchSimilarity(EvalFn):
         results = torch.cat(results, dim=0)
         return results
 
-    def __call__(self, gt, measurement, sample, reduction='none', **kwargs):
+    def __call__(self, gt, sample, reduction='none', **kwargs):
         res = self.evaluate_in_batch(gt, sample)
         if reduction == 'mean':
             res = res.mean()
@@ -269,7 +271,7 @@ class StyleLoss(EvalFn):
         results = torch.cat(results, dim=0)
         return results
 
-    def __call__(self, gt, measurement, sample, reduction='none', **kwargs):
+    def __call__(self, gt, sample, reduction='none', **kwargs):
         res = self.evaluate_in_batch(gt, sample)
         if reduction == 'mean':
             res = res.mean()
@@ -324,7 +326,7 @@ class ClipScore(EvalFn):
         results = torch.cat(results, dim=0)
         return results
 
-    def __call__(self, gt, measurement, sample, reduction='none', **kwargs):
+    def __call__(self, gt, sample, reduction='none', **kwargs):
         res = self.evaluate_in_batch(gt, sample, **kwargs)
         if reduction == 'mean':
             res = res.mean()

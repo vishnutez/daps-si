@@ -4,10 +4,10 @@ import torch
 from torchvision.utils import save_image
 from forward_operator import get_operator
 from data import get_dataset
-from si_sampler import get_sampler, Trajectory
+from st_sampler import get_sampler, Trajectory
 from model import get_model
 from st_eval import get_eval_fn, Evaluator
-from si_reward import get_reward_method, MeasurementReward, StyleReward
+from si_reward import get_reward_method, RefStyleReward
 from si_search import get_search_method
 from torch.nn.functional import interpolate
 from pathlib import Path
@@ -108,9 +108,13 @@ def save_mp4_video(gt, y, x0hat_traj, x0y_traj, xt_traj, output_path, fps=24, se
     writer.close()
 
 
-def log_results(args, sde_trajs, results, images, y, full_samples, table_markdown, total_number):
+def log_results(args, sde_trajs, results, images, full_samples, table_markdown, num_images, num_particles=2):
+    num_generated_samples = num_images * num_particles
     # log hyperparameters and configurations
     full_samples = full_samples.flatten(0, 1)
+    print('in log_results')
+    print('full_samples shape: ', full_samples.shape)
+
     os.makedirs(args.save_dir, exist_ok=True)
     save_dir = safe_dir(Path(args.save_dir))
     root = safe_dir(save_dir / args.name)
@@ -118,9 +122,8 @@ def log_results(args, sde_trajs, results, images, y, full_samples, table_markdow
         yaml.safe_dump(OmegaConf.to_container(args, resolve=True), file, default_flow_style=False, allow_unicode=True)
 
     # log grid results
-    # resized_y = resize(y, images, args.task[args.task_group].operator.name)
     stack = torch.cat([images, full_samples])
-    save_image(stack * 0.5 + 0.5, fp=str(root / 'grid_results.png'), nrow=total_number)
+    save_image(stack * 0.5 + 0.5, fp=str(root / 'grid_results.png'), nrow=num_images)
 
     # log individual sample instances
     if args.save_samples:
@@ -128,7 +131,7 @@ def log_results(args, sde_trajs, results, images, y, full_samples, table_markdow
         image_dir = safe_dir(root / 'samples')
         cnt = 0
         for run in range(args.num_runs):
-            for idx in range(total_number):
+            for idx in range(num_generated_samples):
                 image_path = image_dir / '{:05d}_run{:04d}.png'.format(idx, run)
                 pil_image_list[cnt].save(str(image_path))
                 cnt += 1
@@ -147,7 +150,7 @@ def log_results(args, sde_trajs, results, images, y, full_samples, table_markdow
             x0hat_traj = sde_traj.tensor_data['x0hat']
             x0y_traj = sde_traj.tensor_data['x0y']
             xt_traj = sde_traj.tensor_data['xt']
-            for idx in range(total_number):
+            for idx in range(num_images):
                 video_path = str(traj_dir / '{:05d}_run{:04d}.mp4'.format(idx, run))
                 # save_mp4_video(images[idx], resized_y[idx], x0hat_traj[:, idx], x0y_traj[:, idx], xt_traj[:, idx], video_path)
 
@@ -157,21 +160,21 @@ def log_results(args, sde_trajs, results, images, y, full_samples, table_markdow
     json.dump(results, open(str(root / 'metrics.json'), 'w'), indent=4)
 
 
-def sample_in_batch(sampler, model, x_start, operator, y, evaluator, verbose, record, gt, search_rewards,
-                    gradient_rewards, search, batch_size, text='a knight riding a horse'):
+def sample_in_batch(sampler, model, x_start, evaluator, verbose, record, gt, search_rewards,
+                    gradient_rewards, search, num_particles, text='a knight riding a horse'):
     """
         posterior sampling in batch
     """
     samples = []
     trajs = []
-    for s in range(0, len(x_start), batch_size):
+    for s in range(0, len(x_start), num_particles):
         # update evaluator to correct batch index
+        cur_gt = gt[s // num_particles].unsqueeze(0)
+        print('cur_gt shape: ', cur_gt.shape)
         for reward in search_rewards + gradient_rewards:
-            reward.set_gt_embeddings(s // batch_size)
-        cur_x_start = x_start[s:s + batch_size]
-        cur_y = y[s:s + batch_size]
-        cur_gt = gt[s: s + batch_size]
-        cur_samples = sampler.sample(model, cur_x_start, operator, cur_y, search_rewards, gradient_rewards, search, evaluator,
+            reward.set_ref_embeddings(cur_gt)
+        cur_x_start = x_start[s:s + num_particles]
+        cur_samples = sampler.sample(model, cur_x_start, search_rewards, gradient_rewards, search, evaluator,
                                      verbose=verbose, record=record, gt=cur_gt, text=text)
 
         samples.append(cur_samples)
@@ -224,33 +227,30 @@ def main(args):
     data = get_dataset(**args.data)
 
     print('data: ', data)
-    total_number = len(data)  # number of all images
+    num_images = len(data)  # number of all images
 
-    images = data.get_data(total_number, 0)  # shape=(total_number * particles, 3, 256, 256) - all the images
+    images = data.get_data(num_images, 0)  # shape=(total_number * particles, 3, 256, 256) - all the images
     print(30 * '-', flush=True)
     print('log of get data', flush=True)
-    print('total number of images: ', total_number, flush=True)
+    print('total number of images: ', num_images, flush=True)
     print('shape of images: ', images.shape, flush=True)
     print(30 * '-')
 
     # get model
     model = get_model(**args.model)
 
-    # get operator & measurement
+    # # get operator & measurement
     task_group = args.task[args.task_group]
-    operator = get_operator(**task_group.operator)
-    y = operator.measure(images)
-    for rew in gradient_rewards + search_rewards:
-        if isinstance(rew, MeasurementReward):
-            rew.set_operator(operator)
-        if isinstance(rew, StyleReward):
-            rew.set_model(model)
 
     # get sampler
     sampler = get_sampler(**args.sampler, mcmc_sampler_config=task_group.mcmc_sampler_config)
 
     # get search algorithm
     search = get_search_method(num_particles=num_particles, **args.reward['search_algorithm']) if search_rewards else None
+
+    for rew in gradient_rewards + search_rewards:
+        if isinstance(rew, RefStyleReward):
+            rew.set_model(model)
 
     # get evaluator
     eval_fn_list = []
@@ -264,31 +264,36 @@ def main(args):
     full_trajs = []
     for r in range(args.num_runs):
         print(f'Run: {r}')
-        x_start = sampler.get_start(images.shape[0], model)
+        x_start = sampler.get_start(images.shape[0] * num_particles, model)
         samples, trajs = sample_in_batch(
-            sampler, model, x_start, operator, y, evaluator, verbose=True, record=args.save_traj, gt=images,
-            search_rewards=search_rewards, gradient_rewards=gradient_rewards, search=search, batch_size=num_particles, text=text,
+            sampler=sampler, model=model, x_start=x_start, evaluator=evaluator, verbose=True, record=args.save_traj, gt=images,
+            search_rewards=search_rewards, gradient_rewards=gradient_rewards, search=search, num_particles=num_particles, text=text,
         )
         #samples, trajs = images, None
         full_samples.append(samples)
         full_trajs.append(trajs)
     full_samples = torch.stack(full_samples, dim=0)
     print(30 * '*', flush=True)
-    print('shape of full_samples', full_samples.shape, flush=True)  # [1, 8, 3, 256, 256]
+    print('shape of full_samples', full_samples.shape, flush=True)  # [1, 4, 3, 256, 256]
     print('length of full_traj', len(full_trajs), flush=True)  # length of full_traj 1
     print('type of each traj', type(full_trajs[0]), flush=True)  # type of each traj <class 'cores.trajectory.Trajectory'>
-    print('y-Ax at the end for particles: ', torch.norm(y - operator.measure(samples, input_sigma=0), p=2, dim=(1, 2, 3)))
-    print('average of y-Ax: ', torch.mean(torch.norm(y - operator.measure(samples, input_sigma=0), p=2, dim=(1, 2, 3))))
-    print('average of true images y-Ax: ', torch.mean(torch.norm(y - operator.measure(images, input_sigma=0), p=2, dim=(1, 2, 3))))
     print(30 * '*', flush=True)
 
+    # (num_runs, num_particles*num_images, 3, 256, 256) -> (num_runs, num_images, num_particles, 3, 256, 256)
+    full_samples = full_samples.view(args.num_runs, num_images, num_particles, *full_samples.shape[2:])
+    # (num_runs, num_images, num_particles, 3, 256, 256) -> (num_runs, num_particles, num_images, 3, 256, 256)
+    full_samples = full_samples.permute(0, 2, 1, 3, 4, 5)
+    # (num_runs, num_particles, num_images, 3, 256, 256) -> (num_runs * num_particles, num_images, 3, 256, 256)
+    full_samples = full_samples.reshape(-1, *full_samples.shape[2:])
+    print('shape of full_samples after permute', full_samples.shape, flush=True)
+
     # log metrics
-    results = evaluator.report(images, y, full_samples, text=text)
+    results = evaluator.report(images, full_samples, text=text)
     markdown_text = evaluator.display(results)
     print(markdown_text)
 
     # log results
-    log_results(args, full_trajs, results, images, y, full_samples, markdown_text, total_number)
+    log_results(args, full_trajs, results, images, full_samples, markdown_text, num_images, num_particles=num_particles)
     if args.wandb:
         wandb.init(
             project=args.project_name,

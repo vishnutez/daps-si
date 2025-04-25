@@ -1,8 +1,13 @@
 rewards:
-  - name: style
-    steering: [gradient]
-    data_path: 'dataset/si-daps/style_images'
+  - name: ref_style
+    steering: [gradient, search]
     scale: 0.5 # the scale for gradient in MCMC steps
     freq: 10
 
-num_particles: 1
+search_algorithm:
+  name: group-meeting
+  base: 10
+  min_group: 2
+  normalizing_factor: 2
+
+num_particles: 4
