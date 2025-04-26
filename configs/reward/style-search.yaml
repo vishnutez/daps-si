@@ -1,0 +1,13 @@
+rewards:
+  - name: ref_style
+    steering: [gradient, search]
+    scale: 0.5 # the scale for gradient in MCMC steps
+    freq: 10
+
+search_algorithm:
+  name: group-meeting
+  base: 10
+  min_group: 2
+  normalizing_factor: 2
+
+num_particles: 4

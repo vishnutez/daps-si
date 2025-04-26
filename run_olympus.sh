@@ -6,7 +6,7 @@
 #SBATCH --gres=gpu:a100:1              # Run on a single GPU (max)
 #SBATCH --partition=gpu-research                 # Select GPU Partition
 #SBATCH --qos=olympus-research-gpu          # Specify GPU queue
-#SBATCH --time=0:30:00                 # Time limit hrs:min:sec current 5 min - 36 hour max
+#SBATCH --time=24:00:00                 # Time limit hrs:min:sec current 5 min - 36 hour max
 #SBATCH --output=logs/%x_%j.out        # Standard output and error log
 
 
@@ -37,11 +37,11 @@ python st_ps.py \
         +task=style_transfer \
         +sampler=sd_edm_daps \
         +reward=style \
-        seed=8 \
+        seed=42 \
         task_group=sd \
-        save_dir=results_search_4_freq_10_ddim_1/sd/style \
+        save_dir=results_anneal_100_ddim_10_mcmc_20_best_of_4_scale_0.5/sd/style \
         num_runs=1 \
         name=style_transfer \
         data.start_id=0 \
-        data.end_id=2 \
+        data.end_id=9 \
         gpu=0;
