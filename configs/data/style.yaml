@@ -1,5 +1,5 @@
 name: image
-root: 'dataset/si-daps/style_images'
+root: 'dataset/st-daps/style_images'
 resolution: 256
 start_id: 0
-end_id: 10
+end_id: 9

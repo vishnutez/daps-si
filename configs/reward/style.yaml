@@ -4,4 +4,4 @@ rewards:
     scale: 0.5 # the scale for gradient in MCMC steps
     freq: 10
 
-num_particles: 4
+num_particles: 1

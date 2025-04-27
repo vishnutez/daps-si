@@ -6,7 +6,7 @@ rewards:
   - name: adaface
     pretrained_model: 'ir_50'
     steering: [search]
-    data_path: 'dataset/si_daps/additional_images'
+    data_path: 'dataset/si-daps/additional_images'
     scale: 0.25 # the scale for gradient in MCMC steps
     freq: 1
 
