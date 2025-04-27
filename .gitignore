@@ -110,7 +110,7 @@ db/*.sqlite
 *.Thumbs.db
 
 ### Images, media, and generated files ###
-*.png
+# *.png
 *.jpg
 *.jpeg
 *.gif
