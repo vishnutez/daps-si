@@ -213,18 +213,16 @@ class LatentDAPS(DAPS):
             z0y = self.mcmc_sampler.sample(zt, model, z0hat, sigma, step / self.annealing_scheduler.num_steps, gradient_rewards)
             with torch.no_grad():
                 x0y = model.decode(z0y)
+            x0y = x0y.repeat(z0hat.shape[0], 1, 1, 1)
+            z0y = z0y.repeat(z0hat.shape[0], 1, 1, 1)
 
             # 3. forward diffusion
             if step != self.annealing_scheduler.num_steps - 1:
                 zt = z0y + torch.randn_like(z0y) * self.annealing_scheduler.sigma_steps[step + 1]
-                with torch.no_grad():
-                    xt = model.decode(zt)
             else:
                 zt = z0y
-                with torch.no_grad():
-                    xt = model.decode(zt)
-                # Repeat xt to match the shape (x0hat.shape[0], 3, 512, 512)
-                xt = xt.repeat(x0hat.shape[0], 1, 1, 1)
+            with torch.no_grad():
+                xt = model.decode(zt)
 
             # 4. evaluation
             x0hat_results = x0y_results = {}

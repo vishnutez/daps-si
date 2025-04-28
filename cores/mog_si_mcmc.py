@@ -51,6 +51,11 @@ class MCMCSampler(nn.Module):
         mog_weight = torch.softmax(mog_dist, dim=0)
         mog_term = torch.sum(mog_weight.reshape(-1, 1, 1, 1) * (xt_term + prior_term), dim=0)
 
+        # print(f'x: {x.shape}')
+        # print(f'mog_dist: {mog_dist.shape}')
+        # print(f'mog_weight: {mog_weight.shape}')
+        # print(f"mog_term: {mog_term.shape}")
+
         # here we add the gradient of the rewards
         rewards_grad_term = torch.zeros_like(x, device=x.device)
         data_term = torch.zeros_like(x, device=x.device)
@@ -167,8 +172,8 @@ class MCMCSampler(nn.Module):
         self.prepare_prior_score(x0hat, xt, model, sigma)
 
         x_init = x0hat.clone().detach()
-        x = torch.mean(x_init, dim=0, keepdim=True).expand_as(x_init)  # initialization
-        print(f"Initial x: {x_init.shape}")
+        # print('x_init:', x_init.shape)
+        x = torch.mean(x_init, dim=0, keepdim=True) # initialization
         
         pbar = tqdm.trange(self.num_steps) if verbose else range(self.num_steps)
         for mc_step in pbar:

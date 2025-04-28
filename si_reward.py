@@ -293,7 +293,7 @@ class MeasurementReward(Reward):
         self.name = 'measurement'
 
     def get_reward(self, images: torch.Tensor, **kwargs) -> torch.Tensor:
-        return torch.norm(kwargs.get('measurements') - self.operator.measure(images, input_sigma=0), p=2, dim=(1, 2, 3))
+        return -torch.norm(kwargs.get('measurements') - self.operator.measure(images, input_sigma=0), p=2, dim=(1, 2, 3))
 
     def get_gradients(self, images: torch.Tensor, **kwargs) -> torch.Tensor:
         return self.operator.gradient(images, kwargs.get('measurements'), return_loss=True)

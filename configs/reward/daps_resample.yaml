@@ -1,0 +1,12 @@
+rewards:
+  - name: measurement
+    steering: [gradient, search]
+    scale: 1 # scale for gradient in MCMC steps
+
+search_algorithm:
+  name: group-meeting
+  base: 1
+  min_group: 2
+  normalizing_factor: 100
+
+num_particles: 2

@@ -90,20 +90,25 @@ class DAPS(nn.Module):
                 xt, model, x0hat, operator, measurement, sigma,
                 step / self.annealing_scheduler.num_steps, gradient_rewards
             )
+            # print('x0y shape: ', x0y.shape)
+
+            x0y = x0y.repeat(x0hat.shape[0] // x0y.shape[0], 1, 1, 1)
+
+            # print('after repeat, x0y shape: ', x0y.shape)
 
             # 3. forward diffusion
             if step != self.annealing_scheduler.num_steps - 1:
-                xt = x0y + torch.randn_like(x0y) * self.annealing_scheduler.sigma_steps[step + 1]
+                xt = x0y + torch.randn_like(x0hat) * self.annealing_scheduler.sigma_steps[step + 1]
             else:
-                xt = x0y.repeat(x0hat.shape[0], 1, 1, 1)
+                xt = x0y
 
             # 4. evaluation
             x0hat_results = x0y_results = {}
             if evaluator and 'gt' in kwargs:
                 with torch.no_grad():
                     gt = kwargs['gt']
-                    x0hat_results = evaluator(gt, measurement, x0hat, text=text)
-                    x0y_results = evaluator(gt, measurement, x0y, text=text)
+                    x0hat_results = evaluator(gt, measurement, x0hat)
+                    x0y_results = evaluator(gt, measurement, x0y)
 
                 # record
                 if verbose:

@@ -3,7 +3,7 @@ import yaml
 import torch
 from torchvision.utils import save_image
 from forward_operator import get_operator
-from si_data import get_dataset
+from data import get_dataset
 from mog_si_sampler import get_sampler, Trajectory
 from model import get_model
 from eval import get_eval_fn, Evaluator
@@ -158,19 +158,23 @@ def log_results(args, sde_trajs, results, images, y, full_samples, table_markdow
 
 
 def sample_in_batch(sampler, model, x_start, operator, y, evaluator, verbose, record, gt, search_rewards,
-                    gradient_rewards, search, batch_size):
+                    gradient_rewards, search, num_particles):
     """
         posterior sampling in batch
     """
     samples = []
     trajs = []
-    for s in range(0, len(x_start), batch_size):
+    for s in range(0, len(x_start), num_particles):
         # update evaluator to correct batch index
         for reward in search_rewards + gradient_rewards:
-            reward.set_gt_embeddings(s // batch_size)
-        cur_x_start = x_start[s:s + batch_size]
-        cur_y = y[s:s + batch_size]
-        cur_gt = gt[s: s + batch_size]
+            reward.set_gt_embeddings(s // num_particles)
+        cur_x_start = x_start[s:s + num_particles]
+        cur_y = y[s:s + num_particles]
+        cur_gt = gt[s:s + num_particles]
+
+        print('shape of cur_x_start: ', cur_x_start.shape)
+        print('shape of cur_y: ', cur_y.shape)
+        print('shape of cur_gt: ', cur_gt.shape)
         cur_samples = sampler.sample(model, cur_x_start, operator, cur_y, search_rewards, gradient_rewards, search, evaluator,
                                      verbose=verbose, record=record, gt=cur_gt)
 
@@ -195,8 +199,6 @@ def main(args):
     setproctitle.setproctitle(args.name)
     print(args)
 
-    print('Using mog sampler')
-
     # get rewards
     rewards_cfg = args.reward.get('rewards', [])
     gradient_rewards = [
@@ -216,14 +218,18 @@ def main(args):
 
     # get data
     num_particles = args.reward['num_particles']
-    data = get_dataset(**args.data, num_particles=num_particles)
-    total_number = len(data)  # number of all images
-    images = data.get_data(total_number, 0)  # shape=(total_number * particles, 3, 256, 256) - all the images
+    data = get_dataset(**args.data)
+    num_images = len(data)  # number of all images
+    _images = data.get_data(num_images, 0)  # shape=(total_number * particles, 3, 256, 256) - all the images
     print(30 * '-', flush=True)
     print('log of get data', flush=True)
-    print('total number of images: ', total_number, flush=True)
-    print('shape of images: ', images.shape, flush=True)
+    print('total number of images: ', num_images, flush=True)
+    print('shape of images: ', _images.shape, flush=True)
     print(30 * '-')
+
+    print('number of particles: ', num_particles)
+
+
 
     # get model
     model = get_model(**args.model)
@@ -231,7 +237,14 @@ def main(args):
     # get operator & measurement
     task_group = args.task[args.task_group]
     operator = get_operator(**task_group.operator)
-    y = operator.measure(images)
+    _y = operator.measure(_images)
+    y = torch.zeros(num_images * num_particles, _y.shape[1], _y.shape[2], _y.shape[3]).to(_images.device)
+    images = torch.zeros(num_images * num_particles, _images.shape[1], _images.shape[2], _images.shape[3]).to(_images.device)
+    for i in range(0, num_images * num_particles, num_particles):
+        y[i: i+num_particles] = _y[i // num_particles].repeat(num_particles, 1, 1, 1)  # shape=(total_number * particles, 1, 256, 256)
+        images[i: i+num_particles] = _images[i // num_particles].repeat(num_particles, 1, 1, 1)  # shape=(total_number * particles, 3, 256, 256)
+    print('shape of y: ', y.shape)  # shape=(total_number * particles, 1, 256, 256)
+    print('shape of images: ', images.shape)  # shape=(total_number * particles, 3, 256, 256)
     for rew in gradient_rewards + search_rewards:
         if isinstance(rew, MeasurementReward):
             rew.set_operator(operator)
@@ -259,7 +272,7 @@ def main(args):
         x_start = sampler.get_start(images.shape[0], model)
         samples, trajs = sample_in_batch(
             sampler, model, x_start, operator, y, evaluator, verbose=True, record=args.save_traj, gt=images,
-            search_rewards=search_rewards, gradient_rewards=gradient_rewards, search=search, batch_size=num_particles
+            search_rewards=search_rewards, gradient_rewards=gradient_rewards, search=search, num_particles=num_particles
         )
         #samples, trajs = images, None
         full_samples.append(samples)
@@ -280,7 +293,7 @@ def main(args):
     print(markdown_text)
 
     # log results
-    log_results(args, full_trajs, results, images, y, full_samples, markdown_text, total_number)
+    log_results(args, full_trajs, results, images, y, full_samples, markdown_text, num_images)
     if args.wandb:
         wandb.init(
             project=args.project_name,

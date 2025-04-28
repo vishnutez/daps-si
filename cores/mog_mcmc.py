@@ -164,7 +164,7 @@ class MCMCSampler(nn.Module):
         self.prepare_prior_score(x0hat, xt, model, sigma)
 
         x_init = x0hat.clone().detach()
-        x = torch.mean(x_init, dim=0, keepdim=True).expand_as(x_init)  # initialization
+        x = torch.mean(x_init, dim=0, keepdim=True)  # initialization
         print(f"Initial x: {x_init.shape}")
         pbar = tqdm.trange(self.num_steps) if verbose else range(self.num_steps)
         for mc_step in pbar:
