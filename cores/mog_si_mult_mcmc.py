@@ -23,7 +23,7 @@ class MCMCSampler(nn.Module):
     """
 
     def __init__(self, num_steps, lr, tau=0.01, lr_min_ratio=0.01, prior_solver='gaussian', prior_sigma_min=1e-2,
-                 mc_algo='langevin', momentum=0.9, sigma_thres=10):
+                 mc_algo='langevin', momentum=0.9, sigma_thres=0):
         super().__init__()
         self.num_steps = num_steps
         self.lr = lr
@@ -44,18 +44,19 @@ class MCMCSampler(nn.Module):
                 - Current score estimate.
                 - Data-fitting loss.
         """
-        xt_term = (xt - x) / sigma ** 2
-        prior_term = self.get_prior_score(x, x0hat, xt, model, sigma)
+        mog_term = torch.zeros_like(x, device=x.device)
+        for n in range(len(x)):
+            xn = x[n].unsqueeze(0)
+            xt_term = (xt - xn) / sigma ** 2
+            prior_term = self.get_prior_score(xn, x0hat, xt, model, sigma)
 
-        delta = (x-x0hat).reshape(x0hat.shape[0], -1)
-        mog_dist = -torch.linalg.norm(delta, axis=-1) ** 2 / (2 ** sigma ** 2)
-        mog_weight = torch.softmax(mog_dist, dim=0)
-        mog_term = torch.sum(mog_weight.reshape(-1, 1, 1, 1) * (xt_term + prior_term), dim=0)
+            delta = (xn-x0hat).reshape(x0hat.shape[0], -1)
+            mog_dist = -torch.linalg.norm(delta, axis=-1) ** 2 / (2 ** sigma ** 2)
+            mog_weight = torch.softmax(mog_dist, dim=0)
+            mog_term[n] = torch.sum(mog_weight.reshape(-1, 1, 1, 1) * (xt_term + prior_term), dim=0)
 
         # print(f'x: {x.shape}')
-        # print(f'mog_dist: {mog_dist}')
-        # print(f'mog_weight: {mog_weight}')
-        # print(f"mog_term: {mog_term.shape}")
+        # print(f"mult mog_term: {mog_term.shape}")
 
         # here we add the gradient of the rewards
         rewards_grad_term = torch.zeros_like(x, device=x.device)
@@ -173,14 +174,8 @@ class MCMCSampler(nn.Module):
         self.prepare_prior_score(x0hat, xt, model, sigma)
 
         
-        x_init = x0hat.clone().detach()
-
-        if sigma > self.sigma_thres:
-            print(f'sigma: {sigma} sigma_thres: {self.sigma_thres} => init with mean')
-            x = torch.mean(x_init, dim=0, keepdim=True) # initialization
-        else:
-            print(f'sigma: {sigma} sigma_thres: {self.sigma_thres} => init with random mode')
-            x = x_init[0].unsqueeze(0) # initialization    
+        x_init = x0hat.clone().detach() 
+        x = x_init
         
         pbar = tqdm.trange(self.num_steps) if verbose else range(self.num_steps)
         for mc_step in pbar:
