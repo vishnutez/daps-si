@@ -23,7 +23,7 @@ class MCMCSampler(nn.Module):
     """
 
     def __init__(self, num_steps, lr, tau=0.01, lr_min_ratio=0.01, prior_solver='gaussian', prior_sigma_min=1e-2,
-                 mc_algo='langevin', momentum=0.9, sigma_thres=10):
+                 mc_algo='langevin', momentum=0.9, sigma_thres=0, mult_init=True):
         super().__init__()
         self.num_steps = num_steps
         self.lr = lr
@@ -34,6 +34,7 @@ class MCMCSampler(nn.Module):
         self.mc_algo = mc_algo
         self.momentum = momentum
         self.sigma_thres = sigma_thres
+        self.mult_init = mult_init
 
     def score_fn(self, x, x0hat, model, xt, operator, measurement, sigma, gradient_rewards, mc_step):
         """
@@ -44,15 +45,19 @@ class MCMCSampler(nn.Module):
                 - Current score estimate.
                 - Data-fitting loss.
         """
+        num_particles = x0hat.shape[0]
+        # print(f'num_particles: {num_particles}')
+        y = measurement[0].unsqueeze(0)
         xt_term = (xt - x) / sigma ** 2
         prior_term = self.get_prior_score(x, x0hat, xt, model, sigma)
 
-        delta = (x-x0hat).reshape(x0hat.shape[0], -1)
+        delta = (x-x0hat).reshape(num_particles, -1)
         mog_dist = -torch.linalg.norm(delta, axis=-1) ** 2 / (2 ** sigma ** 2)
         mog_weight = torch.softmax(mog_dist, dim=0)
         mog_term = torch.sum(mog_weight.reshape(-1, 1, 1, 1) * (xt_term + prior_term), dim=0)
 
         # print(f'x: {x.shape}')
+        # print(f'y: {y.shape}')
         # print(f'mog_dist: {mog_dist}')
         # print(f'mog_weight: {mog_weight}')
         # print(f"mog_term: {mog_term.shape}")
@@ -64,7 +69,7 @@ class MCMCSampler(nn.Module):
         for reward in gradient_rewards:
             if mc_step % reward.freq == 0:
                 if reward.name == 'measurement':
-                    data_fitting_grad, data_fitting_loss = reward.get_gradients(x, measurements=measurement)
+                    data_fitting_grad, data_fitting_loss = reward.get_gradients(x, measurements=y)
                     data_term = -data_fitting_grad / self.tau ** 2
                 else:
                     rewards_grad_term += reward.scale * reward.get_gradients(x)
@@ -145,7 +150,7 @@ class MCMCSampler(nn.Module):
             x = torch.where(accept, x_new, x)
         return x.detach()
 
-    def sample(self, xt, model, x0hat, operator, measurement, sigma, ratio, gradient_rewards, record=False, verbose=False):
+    def sample(self, xt, model, x0hat, operator, measurement, sigma, ratio, gradient_rewards, record=False, verbose=False, x_init=None):
         """
         Main method for performing MCMC sampling.
 
@@ -172,22 +177,45 @@ class MCMCSampler(nn.Module):
         self.mc_prepare(x0hat, xt, model, operator, measurement, sigma)
         self.prepare_prior_score(x0hat, xt, model, sigma)
 
+        # if x_init is None:
+        #     x_init = x0hat.clone().detach()
+        #     if self.mult_init:
+        #         x = x_init
+        #     elif sigma > self.sigma_thres:
+        #         print(f'sigma: {sigma} sigma_thres: {self.sigma_thres} => init with mean')
+        #         x = torch.mean(x_init, dim=0, keepdim=True) # initialization
+        #     else:
+        #         print(f'sigma: {sigma} sigma_thres: {self.sigma_thres} => init with random mode')
+        #         x = x_init[0].unsqueeze(0) # initialization 
+        # else:
+        #     x = x_init.clone().detach() 
+        #     print(f'init with x_init') 
         
-        x_init = x0hat.clone().detach()
-
-        if sigma > self.sigma_thres:
-            print(f'sigma: {sigma} sigma_thres: {self.sigma_thres} => init with mean')
-            x = torch.mean(x_init, dim=0, keepdim=True) # initialization
+        if self.mult_init: 
+            x_init = x0hat.clone().detach()
+            x = x_init.clone().detach()
+            # print(f'init with x_init: ', x.shape)
         else:
-            print(f'sigma: {sigma} sigma_thres: {self.sigma_thres} => init with random mode')
-            x = x_init[0].unsqueeze(0) # initialization    
-        
+            x_init = torch.mean(x0hat.clone().detach(), dim=0, keepdim=True)
+            x = x_init.clone().detach()
+
+        num_particles = x.shape[0]
         pbar = tqdm.trange(self.num_steps) if verbose else range(self.num_steps)
         for mc_step in pbar:
-            cur_score, fitting_loss = self.score_fn(x, x0hat, model, xt, operator, measurement, sigma, gradient_rewards, mc_step)
-            epsilon = torch.randn_like(x)
-
-            x = self.mc_update(x, cur_score, lr, epsilon)
+            
+            if not self.mult_init:
+                cur_score, fitting_loss = self.score_fn(x, x0hat, model, xt, operator, measurement, sigma, gradient_rewards, mc_step)
+                epsilon = torch.randn_like(x)
+                x = self.mc_update(x, cur_score, lr, epsilon)
+            else:
+                # print(f'Updating with multiple initializations')
+                for n in range(num_particles):
+                    xn = x[n].unsqueeze(0)
+                    cur_score, fitting_loss = self.score_fn(xn, x0hat, model, xt, operator, measurement, sigma, gradient_rewards, mc_step)
+                    epsn = torch.randn_like(xn)
+                    x_updated = self.mc_update(xn, cur_score, lr, epsn)
+                    # print(f'x_updated: {x_updated.shape}')
+                    x[n] = x_updated
 
             # early stopping with NaN
             if torch.isnan(x).any():

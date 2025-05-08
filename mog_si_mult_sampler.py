@@ -86,15 +86,22 @@ class DAPS(nn.Module):
                 x0hat = x0hat[resampled_idx].clone()
 
             # 2. MCMC update
-            x0y = self.mcmc_sampler.sample(
+            _x0y = self.mcmc_sampler.sample(
                 xt, model, x0hat, operator, measurement, sigma,
                 step / self.annealing_scheduler.num_steps, gradient_rewards
             )
             # print('x0y shape: ', x0y.shape)
 
-            # x0y = x0y.repeat(x0hat.shape[0] // x0y.shape[0], 1, 1, 1)
+            num_groups = _x0y.shape[0]
+            num_particles = x0hat.shape[0]
 
-            # print('after repeat, x0y shape: ', x0y.shape)
+            x0y = torch.zeros_like(x0hat)
+
+            for i in range(0, num_particles, num_groups):
+
+                x0y[i] = _x0y[i // num_groups]
+
+            print('after repeat, x0y shape: ', x0y.shape)
 
             # 3. forward diffusion
             if step != self.annealing_scheduler.num_steps - 1:

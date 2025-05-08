@@ -23,7 +23,7 @@ class MCMCSampler(nn.Module):
     """
 
     def __init__(self, num_steps, lr, tau=0.01, lr_min_ratio=0.01, prior_solver='gaussian', prior_sigma_min=1e-2,
-                 mc_algo='langevin', momentum=0.9, sigma_thres=0):
+                 mc_algo='langevin', momentum=0.9, sigma_thres=0, max_group_size=2):
         super().__init__()
         self.num_steps = num_steps
         self.lr = lr
@@ -34,6 +34,7 @@ class MCMCSampler(nn.Module):
         self.mc_algo = mc_algo
         self.momentum = momentum
         self.sigma_thres = sigma_thres
+        self.max_group_size = max_group_size
 
     def score_fn(self, x, x0hat, model, xt, operator, measurement, sigma, gradient_rewards, mc_step):
         """
@@ -44,39 +45,53 @@ class MCMCSampler(nn.Module):
                 - Current score estimate.
                 - Data-fitting loss.
         """
-        mog_term = torch.zeros_like(x, device=x.device)
-        for n in range(len(x)):
-            xn = x[n].unsqueeze(0)
-            xt_term = (xt - xn) / sigma ** 2
-            prior_term = self.get_prior_score(xn, x0hat, xt, model, sigma)
+        num_particles = x0hat.shape[0]
+        score_term = torch.zeros_like(x, device=x.device)
+        y = measurement[0].unsqueeze(0)
+        for n in range(0, num_particles, self.max_group_size):
+            xn = x[n // self.max_group_size].unsqueeze(0)
+            # xtn = xt[n:n+self.max_group_size]
+            x0hatn = x0hat[n:n+self.max_group_size]
+            # print(f'xn: {xn.shape}')
+            # print(f'xtn: {xtn.shape}')
+            # print(f'x0hatn: {x0hatn.shape}')
+            # xt_term = (xtn - xn) / sigma ** 2
+            prior_term = (x0hatn - xn) / sigma ** 2
 
-            delta = (xn-x0hat).reshape(x0hat.shape[0], -1)
+            # print(f'prior_term: {prior_term.shape}')
+
+            delta = (xn-x0hatn).reshape(self.max_group_size, -1)
             mog_dist = -torch.linalg.norm(delta, axis=-1) ** 2 / (2 ** sigma ** 2)
             mog_weight = torch.softmax(mog_dist, dim=0)
-            mog_term[n] = torch.sum(mog_weight.reshape(-1, 1, 1, 1) * (xt_term + prior_term), dim=0)
 
-        # print(f'x: {x.shape}')
-        # print(f"mult mog_term: {mog_term.shape}")
+            # print(f'mog_weight: {mog_weight.shape}')
+            mog_term = torch.sum(mog_weight.reshape(-1, 1, 1, 1) * prior_term, dim=0)
 
-        # here we add the gradient of the rewards
-        rewards_grad_term = torch.zeros_like(x, device=x.device)
-        data_term = torch.zeros_like(x, device=x.device)
-        data_fitting_loss = 0
-        for reward in gradient_rewards:
-            if mc_step % reward.freq == 0:
-                if reward.name == 'measurement':
-                    data_fitting_grad, data_fitting_loss = reward.get_gradients(x, measurements=measurement)
-                    data_term = -data_fitting_grad / self.tau ** 2
-                else:
-                    rewards_grad_term += reward.scale * reward.get_gradients(x)
+            # print(f'x: {x.shape}')
+            # print(f"mult mog_term: {mog_term.shape}")
 
-        rewards_grad_term = -rewards_grad_term / self.tau ** 2
+            # here we add the gradient of the rewards
+            rewards_grad_term = torch.zeros_like(xn, device=x.device)
+            data_term = torch.zeros_like(xn, device=xn.device)
+            data_fitting_loss = 0
+            for reward in gradient_rewards:
+                if mc_step % reward.freq == 0:
+                    if reward.name == 'measurement':
+                        data_fitting_grad, data_fitting_loss = reward.get_gradients(xn, measurements=y)
+                        data_term = -data_fitting_grad / self.tau ** 2
+                    else:
+                        rewards_grad_term += reward.scale * reward.get_gradients(xn)
 
-        return data_term + mog_term + rewards_grad_term, data_fitting_loss
+            rewards_grad_term = -rewards_grad_term / self.tau ** 2
+
+            score_term[n // self.max_group_size] = mog_term + rewards_grad_term + data_term
+
+        return score_term, data_fitting_loss
 
     def get_prior_score(self, x, x0hat, xt, model, sigma):
         if self.prior_solver == 'score-min' or self.prior_solver == 'score-t' or self.prior_solver == 'gaussian':
             prior_score = self.prior_score
+            # self.prepare_prior_score(x0hat, xt, model, sigma)
         elif self.prior_solver == 'exact':
             prior_score = model.score(x, torch.tensor(self.prior_sigma_min).to(x.device)).detach()
         else:
@@ -173,9 +188,15 @@ class MCMCSampler(nn.Module):
         self.mc_prepare(x0hat, xt, model, operator, measurement, sigma)
         self.prepare_prior_score(x0hat, xt, model, sigma)
 
+        num_particles = x0hat.shape[0]
+        num_groups = num_particles // self.max_group_size
         
-        x_init = x0hat.clone().detach() 
-        x = x_init
+        x_init = x0hat.clone().detach()
+        x = torch.zeros(num_groups, *x0hat.shape[1:], device=x0hat.device)
+        print(f'x: {x.shape}')
+        print(f'group_size: {self.max_group_size}')
+        for i in range(0, num_particles, self.max_group_size):
+            x[i // self.max_group_size] = torch.mean(x_init[i:i + self.max_group_size])
         
         pbar = tqdm.trange(self.num_steps) if verbose else range(self.num_steps)
         for mc_step in pbar:

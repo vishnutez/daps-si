@@ -63,6 +63,9 @@ class DAPS(nn.Module):
             self.trajectory = Trajectory()
         pbar = tqdm.trange(self.annealing_scheduler.num_steps - 1) if verbose else range(self.annealing_scheduler.num_steps - 1)
         xt = x_start
+        # x_init = torch.randn(1, *x_start.shape[1:]) * self.annealing_scheduler.sigma_steps[self.annealing_scheduler.num_steps - 1]
+        # x_init = x_init.to(x_start.device)
+        # print('x_init shape: ', x_init.shape)
         for step in pbar:
             sigma = self.annealing_scheduler.sigma_steps[step]
             # 1. reverse diffusion
@@ -70,6 +73,7 @@ class DAPS(nn.Module):
                 diffusion_scheduler = get_diffusion_scheduler(**self.diffusion_scheduler_config, sigma_max=sigma)
                 sampler = DiffusionPFODE(model, diffusion_scheduler, solver='euler')
                 x0hat = sampler.sample(xt)
+                
 
             # Find the rewards and do the search
             rewards = torch.zeros(x0hat.shape[0], device=x0hat.device)
@@ -85,12 +89,20 @@ class DAPS(nn.Module):
                 xt = xt[resampled_idx].clone()
                 x0hat = x0hat[resampled_idx].clone()
 
+            print('no x_init: ')
+
             # 2. MCMC update
             x0y = self.mcmc_sampler.sample(
                 xt, model, x0hat, operator, measurement, sigma,
-                step / self.annealing_scheduler.num_steps, gradient_rewards
+                step / self.annealing_scheduler.num_steps, gradient_rewards, x_init=None
             )
-            # print('x0y shape: ', x0y.shape)
+            
+
+            # xt_init = x0y + torch.randn_like(x0y) * self.annealing_scheduler.sigma_steps[step + 1]
+            # with torch.no_grad():
+            #     diffusion_scheduler = get_diffusion_scheduler(**self.diffusion_scheduler_config, sigma_max=sigma)
+            #     sampler = DiffusionPFODE(model, diffusion_scheduler, solver='euler')
+            #     x_init = sampler.sample(xt_init)
 
             x0y = x0y.repeat(x0hat.shape[0] // x0y.shape[0], 1, 1, 1)
 
@@ -100,7 +112,7 @@ class DAPS(nn.Module):
             if step != self.annealing_scheduler.num_steps - 1:
                 xt = x0y + torch.randn_like(x0hat) * self.annealing_scheduler.sigma_steps[step + 1]
             else:
-                xt = x0y
+                xt = x0y  
 
             # 4. evaluation
             x0hat_results = x0y_results = {}

@@ -23,7 +23,7 @@ class MCMCSampler(nn.Module):
     """
 
     def __init__(self, num_steps, lr, tau=0.01, lr_min_ratio=0.01, prior_solver='gaussian', prior_sigma_min=1e-2,
-                 mc_algo='langevin', momentum=0.9):
+                 mc_algo='langevin', momentum=0.9, **kwargs):
         super().__init__()
         self.num_steps = num_steps
         self.lr = lr
@@ -45,6 +45,7 @@ class MCMCSampler(nn.Module):
         """
         xt_term = (xt - x) / sigma ** 2
         prior_term = self.get_prior_score(x, x0hat, xt, model, sigma)
+        num_particles = x0hat.shape[0]
 
         # here we add the gradient of the rewards
         rewards_grad_term = torch.zeros_like(x, device=x.device)
@@ -54,7 +55,7 @@ class MCMCSampler(nn.Module):
             if mc_step % reward.freq == 0:
                 if reward.name == 'measurement':
                     data_fitting_grad, data_fitting_loss = reward.get_gradients(x, measurements=measurement)
-                    data_term = -data_fitting_grad / self.tau ** 2
+                    data_term = - data_fitting_grad / self.tau ** 2
                 else:
                     rewards_grad_term += reward.scale * reward.get_gradients(x)
 
